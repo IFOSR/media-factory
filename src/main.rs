@@ -1,6 +1,8 @@
 use clap::{Parser, Subcommand};
 
 mod config;
+mod llm;
+mod pi_rpc;
 
 #[derive(Parser)]
 #[command(name = "media-factory", about = "自媒体内容工厂：改写 → 生图 → 播客 → 视频")]
