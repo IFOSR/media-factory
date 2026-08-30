@@ -49,7 +49,7 @@ pub fn split_subtitle_entries(
     start: f64,
     end: f64,
 ) -> Vec<SubtitleEntry> {
-    let lines = split_subtitle_text(text, 20);
+    let lines = split_subtitle_text(text, 18);
     if lines.is_empty() {
         return vec![];
     }
