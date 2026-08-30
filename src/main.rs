@@ -4,6 +4,7 @@ mod cmd;
 mod config;
 mod llm;
 mod pi_rpc;
+mod provider;
 mod wizard;
 
 #[derive(Parser)]
@@ -53,6 +54,9 @@ async fn main() -> anyhow::Result<()> {
         Commands::Config => wizard::run()?,
         Commands::Rewrite { input, id } => {
             cmd::rewrite::run(input, id).await?;
+        }
+        Commands::Image { id, r#ref } => {
+            cmd::image::run(id, r#ref).await?;
         }
         _ => println!("not implemented"),
     }
