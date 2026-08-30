@@ -1,5 +1,6 @@
 use clap::{Parser, Subcommand};
 
+mod cmd;
 mod config;
 mod llm;
 mod pi_rpc;
@@ -50,6 +51,9 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Commands::Config => wizard::run()?,
+        Commands::Rewrite { input, id } => {
+            cmd::rewrite::run(input, id).await?;
+        }
         _ => println!("not implemented"),
     }
     Ok(())
