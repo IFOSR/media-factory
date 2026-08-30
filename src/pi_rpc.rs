@@ -112,14 +112,13 @@ impl LlmAgent for PiRpcAgent {
             )
         })?;
 
-        // 发送 prompt 命令
+        // 发送 prompt 命令（注意：不能立即关闭 stdin，否则 pi 会在 LLM 回复完成前退出）
         let mut stdin = child.stdin.take().unwrap();
         let payload = serde_json::json!({"id": "req-1", "type": "prompt", "message": prompt});
         stdin
             .write_all((payload.to_string() + "\n").as_bytes())
             .await?;
         stdin.flush().await?;
-        drop(stdin); // 关闭 stdin，通知 pi 无后续命令
 
         // 后台收集 stderr，避免 wait 后读阻塞
         let stderr = child.stderr.take().unwrap();
@@ -130,7 +129,7 @@ impl LlmAgent for PiRpcAgent {
             String::from_utf8_lossy(&buf).to_string()
         });
 
-        // 读 stdout 事件
+        // 读 stdout 事件，直到 agent_settled（保持 stdin 打开）
         let stdout = child.stdout.take().unwrap();
         let mut lines = BufReader::new(stdout).lines();
 
@@ -168,6 +167,8 @@ impl LlmAgent for PiRpcAgent {
             }
         }
 
+        // 回复完成后关闭 stdin，让 pi 退出
+        drop(stdin);
         let status = child.wait().await?;
         let stderr_text = stderr_task.await.unwrap_or_default();
 
@@ -175,11 +176,18 @@ impl LlmAgent for PiRpcAgent {
             anyhow::bail!("pi RPC 错误: {e}");
         }
         if !status.success() {
-            let tail: String = stderr_text.chars().rev().take(2000).collect::<String>().chars().rev().collect();
+            let tail: String = stderr_text
+                .chars()
+                .rev()
+                .take(2000)
+                .collect::<String>()
+                .chars()
+                .rev()
+                .collect();
             anyhow::bail!("pi 进程异常退出（{}）: {}", status, tail);
         }
         if !settled {
-            anyhow::bail!("pi 未返回 agent_settled 事件，会话异常结束");
+            anyhow::bail!("pi 未返回 agent_settled 事件，会话异常结束: {}", stderr_text.trim())
         }
         Ok(out)
     }
