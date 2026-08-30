@@ -626,7 +626,8 @@ pub trait ImageProvider: Send + Sync {
 pub fn resolve_image(cfg: &Config) -> anyhow::Result<Box<dyn ImageProvider>> { todo!() } // nano-banana / openai-image / seedream / custom
 ```
 
-- `nano_banana.rs`：Gemini Image generateContent（`responseModalities: ["IMAGE"]`）；参考图 → base64 `inline_data` part；`supports_reference() = true`
+- `nano_banana.rs`（默认走官方 Gemini 图像 API：`models/{model}:generateContent` + `x-goog-api-key` + `responseModalities:["IMAGE"]`，参考图 `inline_data`；模型默认 `gemini-3-pro-image-preview`，可用 extra `model` 覆盖）
+- 第三方 nano-banana 服务（ModelGate 等）不内置，由用户在向导 Other 中配 openai-compatible（base_url + model）
 - `cmd/image.rs`：校验 `rewritten.md` 存在 → pi 提炼 prompt → resolve image provider → `--ref` 存在且 `!supports_reference()` 时警告降级 → `image.png` 落盘
 
 **Step 4: 测试通过 + 手动验证**

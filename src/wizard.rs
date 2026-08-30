@@ -61,7 +61,7 @@ pub fn parse_available_models(resp: &serde_json::Value) -> Vec<String> {
 
 fn builtin_display_name(kind: BuiltinKind) -> &'static str {
     match kind {
-        BuiltinKind::NanoBanana => "nano-banana（Gemini 生图，支持参考图）",
+        BuiltinKind::NanoBanana => "nano-banana（官方 Gemini 生图，支持参考图）",
         BuiltinKind::OpenAiImage => "openai-image（gpt-image）",
         BuiltinKind::DoubaoSeedream => "doubao-seedream（豆包生图）",
         BuiltinKind::VolcPodcast => "volc-podcast（火山播客大模型，推荐）",

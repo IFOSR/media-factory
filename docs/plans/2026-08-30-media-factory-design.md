@@ -71,7 +71,7 @@ providers:
 | 任务 | provider 来源 |
 |---|---|
 | 语言模型（改写 / 图像 prompt 提炼 / 播客脚本） | **pi agent**：向导列出 pi 已认证的模型供选择；自定义 provider 走 pi 的 `models.json`，用户自行在 pi 侧配置 |
-| 生图 | 内置：nano-banana（Gemini Image，原生支持参考图）/ OpenAI gpt-image / 豆包 Seedream；支持 Other 自定义 |
+| 生图 | 内置：**nano-banana（默认走官方 Gemini 图像 API，GEMINI_API_KEY）** / OpenAI gpt-image / 豆包 Seedream；第三方 nano-banana 服务（如 ModelGate）走 Other 自定义（openai-compatible） |
 | 播客 | 内置：**火山播客大模型（volc-podcast，推荐默认，文案直接生成双人播客）** / Gemini TTS / OpenAI TTS / 火山豆包语音（volc-tts）；支持 Other 自定义 |
 
 ### 自定义 provider（Other）

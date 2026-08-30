@@ -18,7 +18,89 @@ pub trait ImageProvider: Send + Sync {
     }
 }
 
-/// OpenAI 兼容 /images/generations 实现（nano-banana / openai-image / 自定义共用）
+/// 官方 Gemini 图像生成 API（默认生图 provider）。
+/// POST https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent
+/// header `x-goog-api-key`；`generationConfig.responseModalities: ["TEXT","IMAGE"]`；
+/// 参考图通过 `parts[].inline_data` 内联。
+pub struct GeminiImage {
+    api_key: String,
+    model: String,
+    base_url: String,
+    client: reqwest::Client,
+}
+
+impl GeminiImage {
+    pub fn new(api_key: String, model: String) -> Self {
+        Self {
+            api_key,
+            model,
+            base_url: "https://generativelanguage.googleapis.com/v1beta".into(),
+            client: reqwest::Client::builder().no_proxy().build().unwrap(),
+        }
+    }
+
+    /// 测试用：覆盖 base_url
+    pub fn with_base_url(mut self, base_url: String) -> Self {
+        self.base_url = base_url;
+        self
+    }
+}
+
+#[async_trait::async_trait]
+impl ImageProvider for GeminiImage {
+    async fn generate(&self, req: &ImageRequest) -> anyhow::Result<Vec<u8>> {
+        let mut parts: Vec<serde_json::Value> = vec![serde_json::json!({"text": req.prompt})];
+        if let Some(ref_path) = &req.reference_image {
+            let bytes = std::fs::read(ref_path)?;
+            let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
+            parts.push(serde_json::json!({
+                "inline_data": {"mime_type": "image/png", "data": b64}
+            }));
+        }
+
+        let body = serde_json::json!({
+            "contents": [{"role": "user", "parts": parts}],
+            "generationConfig": {"responseModalities": ["TEXT", "IMAGE"]}
+        });
+
+        let resp = self
+            .client
+            .post(format!(
+                "{}/models/{}:generateContent",
+                self.base_url, self.model
+            ))
+            .header("x-goog-api-key", &self.api_key)
+            .json(&body)
+            .send()
+            .await?;
+
+        anyhow::ensure!(
+            resp.status().is_success(),
+            "Gemini 生图 API 返回错误 {}: {}",
+            resp.status(),
+            resp.text().await.unwrap_or_default()
+        );
+
+        let v: serde_json::Value = resp.json().await?;
+        for part in v["candidates"][0]["content"]["parts"]
+            .as_array()
+            .into_iter()
+            .flatten()
+        {
+            if let Some(b64) = part["inlineData"]["data"].as_str() {
+                return Ok(base64::engine::general_purpose::STANDARD.decode(b64)?);
+            }
+        }
+        anyhow::bail!("Gemini 生图响应中未找到图片数据（inlineData）");
+    }
+
+    fn supports_reference(&self) -> bool {
+        true
+    }
+}
+
+/// OpenAI 兼容 /images/generations 实现（openai-image / 自定义 Other 共用）。
+/// 第三方 nano-banana 服务（如 ModelGate）也走这里，由用户在 Other 中配置。
 pub struct OpenAiImages {
     pub base_url: String,
     pub api_key: String,
@@ -48,7 +130,11 @@ impl OpenAiImages {
 
     async fn fetch_url(&self, url: &str) -> anyhow::Result<Vec<u8>> {
         let resp = self.client.get(url).send().await?;
-        anyhow::ensure!(resp.status().is_success(), "下载生成图片失败: {}", resp.status());
+        anyhow::ensure!(
+            resp.status().is_success(),
+            "下载生成图片失败: {}",
+            resp.status()
+        );
         Ok(resp.bytes().await?.to_vec())
     }
 }
@@ -110,6 +196,8 @@ impl ImageProvider for OpenAiImages {
     }
 }
 
+/// 根据 Config 中的 tasks.image 选择构造 ImageProvider。
+/// nano-banana 默认 = 官方 Gemini 图像 API；第三方服务走 Other 自定义（openai-compatible）。
 pub fn resolve_image(cfg: &Config) -> anyhow::Result<Box<dyn ImageProvider>> {
     let selection = cfg
         .tasks
@@ -134,19 +222,15 @@ pub fn resolve_image(cfg: &Config) -> anyhow::Result<Box<dyn ImageProvider>> {
             false,
             serde_json::Map::new(),
         ))),
-        ProviderConfig::Builtin { kind, api_key, .. } => match kind {
+        ProviderConfig::Builtin {
+            kind, api_key, extra, ..
+        } => match kind {
             BuiltinKind::NanoBanana => {
-                let mut extra = serde_json::Map::new();
-                extra.insert("output_format".into(), "png".into());
-                extra.insert("output_type".into(), "url".into());
-                extra.insert("number_results".into(), 1.into());
-                Ok(Box::new(OpenAiImages::new(
-                    "https://mg.aid.pub/api/v1".into(),
-                    api_key.clone(),
-                    "google/nano-banana-pro".into(),
-                    true,
-                    extra,
-                )))
+                let model = extra
+                    .get("model")
+                    .cloned()
+                    .unwrap_or_else(|| "gemini-3-pro-image-preview".into());
+                Ok(Box::new(GeminiImage::new(api_key.clone(), model)))
             }
             BuiltinKind::OpenAiImage => Ok(Box::new(OpenAiImages::new(
                 "https://api.openai.com/v1".into(),
@@ -158,10 +242,7 @@ pub fn resolve_image(cfg: &Config) -> anyhow::Result<Box<dyn ImageProvider>> {
             BuiltinKind::DoubaoSeedream => {
                 anyhow::bail!("doubao-seedream（豆包生图）暂未实现，请换用其他生图 provider")
             }
-            other => anyhow::bail!(
-                "provider {:?} 不支持生图任务",
-                other
-            ),
+            other => anyhow::bail!("provider {:?} 不支持生图任务", other),
         },
     }
 }
@@ -178,30 +259,31 @@ mod tests {
         p
     }
 
+    fn b64() -> String {
+        base64::engine::general_purpose::STANDARD.encode(PNG_BYTES)
+    }
+
+    fn image_response() -> serde_json::Value {
+        serde_json::json!({
+            "candidates": [{"content": {"parts": [
+                {"text": "ok"},
+                {"inlineData": {"mimeType": "image/png", "data": b64()}}
+            ]}}]
+        })
+    }
+
     #[tokio::test]
-    async fn nano_banana_with_reference_image() {
+    async fn gemini_with_reference_image() {
         let server = wiremock::MockServer::start().await;
         wiremock::Mock::given(wiremock::matchers::method("POST"))
-            .and(wiremock::matchers::path("/images/generations"))
-            .and(wiremock::matchers::body_partial_json(serde_json::json!({
-                "model": "google/nano-banana-pro"
-            })))
-            .respond_with(
-                wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                    "data": [{"content": base64::engine::general_purpose::STANDARD.encode(PNG_BYTES)}]
-                })),
-            )
+            .and(wiremock::matchers::path("/models/gemini-3-pro-image-preview:generateContent"))
+            .and(wiremock::matchers::header("x-goog-api-key", "key"))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(image_response()))
             .mount(&server)
             .await;
 
-        let p = OpenAiImages::new(
-            server.uri(),
-            "key".into(),
-            "google/nano-banana-pro".into(),
-            true,
-            serde_json::Map::new(),
-        );
-
+        let p = GeminiImage::new("key".into(), "gemini-3-pro-image-preview".into())
+            .with_base_url(server.uri());
         let dir = tempfile::tempdir().unwrap();
         let bytes = p
             .generate(&ImageRequest {
@@ -211,28 +293,24 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(bytes, PNG_BYTES);
+
+        let reqs = server.received_requests().await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&reqs[0].body).unwrap();
+        assert!(body["contents"][0]["parts"][1]["inline_data"]["data"]
+            .as_str()
+            .is_some());
     }
 
     #[tokio::test]
-    async fn nano_banana_without_reference_omits_image_field() {
+    async fn gemini_without_reference_omits_inline_data() {
         let server = wiremock::MockServer::start().await;
         wiremock::Mock::given(wiremock::matchers::method("POST"))
-            .and(wiremock::matchers::path("/images/generations"))
-            .respond_with(
-                wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                    "data": [{"content": base64::engine::general_purpose::STANDARD.encode(PNG_BYTES)}]
-                })),
-            )
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(image_response()))
             .mount(&server)
             .await;
 
-        let p = OpenAiImages::new(
-            server.uri(),
-            "key".into(),
-            "google/nano-banana-pro".into(),
-            true,
-            serde_json::Map::new(),
-        );
+        let p = GeminiImage::new("key".into(), "gemini-3-pro-image-preview".into())
+            .with_base_url(server.uri());
         let bytes = p
             .generate(&ImageRequest {
                 prompt: "一只猫".into(),
@@ -244,11 +322,41 @@ mod tests {
 
         let reqs = server.received_requests().await.unwrap();
         let body: serde_json::Value = serde_json::from_slice(&reqs[0].body).unwrap();
-        assert!(body.get("image").is_none(), "无参考图时不应有 image 字段");
+        assert_eq!(body["contents"][0]["parts"].as_array().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn openai_images_custom_roundtrip() {
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .and(wiremock::matchers::path("/images/generations"))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "data": [{"content": b64()}]
+                })),
+            )
+            .mount(&server)
+            .await;
+
+        let p = OpenAiImages::new(
+            server.uri(),
+            "key".into(),
+            "google/nano-banana-pro".into(),
+            false,
+            serde_json::Map::new(),
+        );
+        let bytes = p
+            .generate(&ImageRequest {
+                prompt: "一只猫".into(),
+                reference_image: None,
+            })
+            .await
+            .unwrap();
+        assert_eq!(bytes, PNG_BYTES);
     }
 
     #[test]
-    fn resolve_image_picks_nano_banana() {
+    fn resolve_image_defaults_to_official_gemini() {
         let mut cfg = Config::default();
         cfg.tasks.image = Some(crate::config::TaskSelection {
             provider: "nano-banana".into(),
