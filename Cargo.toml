@@ -1,0 +1,26 @@
+[package]
+name = "media-factory"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+dialoguer = "0.11"
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
+serde_json = "1"
+reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+tokio = { version = "1", features = ["full"] }
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-native-roots"] }  # 火山播客 WebSocket API
+flate2 = "1"  # 播客协议 gzip 压缩
+uuid = { version = "1", features = ["v4"] }  # X-Api-Request-Id
+async-trait = "0.1"
+anyhow = "1"
+thiserror = "1"
+base64 = "0.22"
+chrono = "0.4"
+dirs = "5"
+
+[dev-dependencies]
+wiremock = "0.6"
+tempfile = "3"
