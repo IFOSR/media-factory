@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use dialoguer::{Confirm, Input, MultiSelect, Password, Select};
+use dialoguer::{Confirm, Input, Password, Select};
 
 use crate::config::{BuiltinKind, Config, MediaTaskKind, ProviderConfig, TaskSelection};
 use crate::pi_rpc;
@@ -113,7 +113,10 @@ pub async fn run() -> anyhow::Result<()> {
             0 => bind_llm(&mut cfg).await?,
             1 => bind_media(&mut cfg, MediaTaskKind::Image)?,
             2 => bind_media(&mut cfg, MediaTaskKind::Podcast)?,
-            3 => add_custom(&mut cfg)?,
+            3 => {
+                let name = add_custom(&mut cfg)?;
+                println!("已创建自定义 provider「{name}」，可在「生图」/「播客」中绑定");
+            }
             4 => {
                 cfg.save(&path)?;
                 println!("已保存到 {}", path.display());
@@ -147,7 +150,7 @@ async fn bind_llm(cfg: &mut Config) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let mut items: Vec<String> = vec!["使用 pi 默认模型".into()];
+    let mut items: Vec<String> = vec!["← 返回上一步".into(), "使用 pi 默认模型".into()];
     items.extend(models.iter().cloned());
 
     let sel = Select::new()
@@ -156,11 +159,14 @@ async fn bind_llm(cfg: &mut Config) -> anyhow::Result<()> {
         .default(0)
         .interact()?;
 
-    cfg.tasks.llm = if sel == 0 {
+    if sel == 0 {
+        return Ok(());
+    }
+    cfg.tasks.llm = if sel == 1 {
         None
     } else {
         Some(crate::config::LlmSelection {
-            model: models[sel - 1].clone(),
+            model: models[sel - 2].clone(),
         })
     };
     Ok(())
@@ -169,18 +175,16 @@ async fn bind_llm(cfg: &mut Config) -> anyhow::Result<()> {
 fn bind_media(cfg: &mut Config, task: MediaTaskKind) -> anyhow::Result<()> {
     let builtins = builtin_for_task(task);
 
-    // 菜单项：内置 provider 名 + 自定义 provider 名
-    let mut labels: Vec<String> = builtins
-        .iter()
-        .map(|k| {
-            let configured = cfg
-                .providers
-                .iter()
-                .any(|(_, p)| matches!(p, ProviderConfig::Builtin { kind, .. } if kind == k));
-            let mark = if configured { " ✓" } else { " [未配置]" };
-            format!("{}{}", builtin_display_name(*k), mark)
-        })
-        .collect();
+    // 菜单：返回上一步 + 内置 provider + 已有自定义 + Other（新增）
+    let mut labels: Vec<String> = vec!["← 返回上一步".into()];
+    labels.extend(builtins.iter().map(|k| {
+        let configured = cfg
+            .providers
+            .iter()
+            .any(|(_, p)| matches!(p, ProviderConfig::Builtin { kind, .. } if kind == k));
+        let mark = if configured { " ✓" } else { " [未配置]" };
+        format!("{}{}", builtin_display_name(*k), mark)
+    }));
 
     let custom_names: Vec<String> = cfg
         .providers
@@ -189,6 +193,8 @@ fn bind_media(cfg: &mut Config, task: MediaTaskKind) -> anyhow::Result<()> {
         .map(|(n, _)| n.clone())
         .collect();
     labels.extend(custom_names.iter().map(|n| format!("{n}（自定义）")));
+    let other_idx = labels.len();
+    labels.push("Other（新增自定义 provider）".into());
 
     let sel = Select::new()
         .with_prompt(match task {
@@ -199,8 +205,21 @@ fn bind_media(cfg: &mut Config, task: MediaTaskKind) -> anyhow::Result<()> {
         .default(0)
         .interact()?;
 
-    if sel < builtins.len() {
-        let kind = builtins[sel];
+    // 0 = 返回；other_idx = Other；1..=builtins.len() = 内置；其余 = 已有自定义
+    if sel == 0 {
+        return Ok(());
+    }
+    if sel == other_idx {
+        let name = add_custom(cfg)?;
+        let provider = TaskSelection { provider: name };
+        match task {
+            MediaTaskKind::Image => cfg.tasks.image = Some(provider),
+            MediaTaskKind::Podcast => cfg.tasks.podcast = Some(provider),
+        }
+        return Ok(());
+    }
+    if sel <= builtins.len() {
+        let kind = builtins[sel - 1];
         let id = builtin_id(kind).to_string();
         // 若未配置 api_key，录入
         let has_key = cfg.providers.iter().any(|(_, p)| {
@@ -232,7 +251,7 @@ fn bind_media(cfg: &mut Config, task: MediaTaskKind) -> anyhow::Result<()> {
             MediaTaskKind::Podcast => cfg.tasks.podcast = Some(selection),
         }
     } else {
-        let name = custom_names[sel - builtins.len()].clone();
+        let name = custom_names[sel - 1 - builtins.len()].clone();
         let provider = TaskSelection { provider: name };
         match task {
             MediaTaskKind::Image => cfg.tasks.image = Some(provider),
@@ -242,7 +261,7 @@ fn bind_media(cfg: &mut Config, task: MediaTaskKind) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn add_custom(cfg: &mut Config) -> anyhow::Result<()> {
+fn add_custom(cfg: &mut Config) -> anyhow::Result<String> {
     let name = Input::<String>::new()
         .with_prompt("自定义 provider 名称")
         .interact()?;
@@ -269,19 +288,7 @@ fn add_custom(cfg: &mut Config) -> anyhow::Result<()> {
             model,
         },
     );
-
-    let chosen = MultiSelect::new()
-        .with_prompt("绑定到哪些任务？（空格选择，回车确认）")
-        .items(&["生图", "播客"])
-        .interact()?;
-    for c in chosen {
-        match c {
-            0 => cfg.tasks.image = Some(TaskSelection { provider: name.clone() }),
-            1 => cfg.tasks.podcast = Some(TaskSelection { provider: name.clone() }),
-            _ => {}
-        }
-    }
-    Ok(())
+    Ok(name)
 }
 
 #[cfg(test)]
