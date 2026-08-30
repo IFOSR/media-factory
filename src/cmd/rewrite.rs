@@ -51,7 +51,7 @@ pub async fn run(input: Option<String>, id: Option<String>) -> anyhow::Result<St
     run_with(Path::new("output"), &source, id, &llm).await
 }
 
-fn read_input(input: Option<String>) -> anyhow::Result<String> {
+pub(crate) fn read_input(input: Option<String>) -> anyhow::Result<String> {
     match input {
         Some(path) => Ok(std::fs::read_to_string(&path)?),
         None => {

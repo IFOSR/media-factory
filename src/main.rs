@@ -69,7 +69,9 @@ async fn main() -> anyhow::Result<()> {
         Commands::Video { id } => {
             cmd::video::run(id)?;
         }
-        _ => println!("not implemented"),
+        Commands::Run { input, id, r#ref } => {
+            cmd::run::run(input, id, r#ref).await?;
+        }
     }
     Ok(())
 }
