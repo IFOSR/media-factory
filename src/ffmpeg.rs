@@ -1,22 +1,36 @@
 //! ffmpeg 封装（subprocess）
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
+/// 找到可用的 ffmpeg 二进制：优先用 ffmpeg-full（含 libass，支持字幕烧录）
+pub fn ffmpeg_bin() -> PathBuf {
+    let full = PathBuf::from("/usr/local/opt/ffmpeg-full/bin/ffmpeg");
+    if full.exists() {
+        return full;
+    }
+    let full_m1 = PathBuf::from("/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg");
+    if full_m1.exists() {
+        return full_m1;
+    }
+    PathBuf::from("ffmpeg")
+}
+
 pub fn require_ffmpeg() -> anyhow::Result<()> {
-    let ok = Command::new("ffmpeg").arg("-version").output().is_ok();
+    let ok = Command::new(ffmpeg_bin()).arg("-version").output().is_ok();
     anyhow::ensure!(ok, "未找到 ffmpeg，请先安装（brew install ffmpeg / apt install ffmpeg）");
     Ok(())
 }
 
 /// 检测 ffmpeg 是否支持字幕滤镜（需 libass）
 pub fn has_subtitles_filter() -> bool {
-    Command::new("ffmpeg")
+    Command::new(ffmpeg_bin())
         .args(["-hide_banner", "-filters"])
         .output()
         .map(|o| {
             let s = String::from_utf8_lossy(&o.stdout);
-            s.lines().any(|l| l.trim_start().starts_with("subtitles"))
+            s.lines()
+                .any(|l| l.split_whitespace().any(|t| t == "subtitles"))
         })
         .unwrap_or(false)
 }
@@ -31,7 +45,7 @@ pub fn concat_mp3(seg_files: &[impl AsRef<Path>], out: &Path) -> anyhow::Result<
     }
     std::fs::write(&list, content)?;
 
-    let status = Command::new("ffmpeg")
+    let status = Command::new(ffmpeg_bin())
         .args(["-y", "-f", "concat", "-safe", "0", "-i"])
         .arg(&list)
         .args(["-c", "copy"])
@@ -44,7 +58,7 @@ pub fn concat_mp3(seg_files: &[impl AsRef<Path>], out: &Path) -> anyhow::Result<
 
 /// 静态图 + 音频合成视频（图片贯穿全片，时长 = 音频时长）；可选烧入字幕
 pub fn make_video(image: &Path, audio: &Path, subtitle: Option<&Path>, out: &Path) -> anyhow::Result<()> {
-    let mut cmd = Command::new("ffmpeg");
+    let mut cmd = Command::new(ffmpeg_bin());
     cmd.args(["-y", "-loop", "1", "-i"])
         .arg(image)
         .arg("-i")
@@ -65,7 +79,8 @@ pub fn make_video(image: &Path, audio: &Path, subtitle: Option<&Path>, out: &Pat
     }
 
     cmd.args([
-        "-c:v", "libx264", "-tune", "stillimage",
+        "-c:v", "libx264", "-preset", "veryfast", "-tune", "stillimage",
+        "-r", "15",
         "-c:a", "aac", "-b:a", "192k",
         "-pix_fmt", "yuv420p", "-shortest",
     ])
@@ -81,7 +96,7 @@ mod tests {
     use super::*;
 
     fn make_test_mp3(path: &Path, seconds: u32) {
-        let status = Command::new("ffmpeg")
+        let status = Command::new(ffmpeg_bin())
             .args(["-y", "-f", "lavfi", "-i"])
             .arg(format!("sine=frequency=440:duration={seconds}"))
             .args(["-codec:a", "libmp3lame"])
