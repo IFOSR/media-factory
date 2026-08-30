@@ -1,5 +1,7 @@
 use clap::{Parser, Subcommand};
 
+mod config;
+
 #[derive(Parser)]
 #[command(name = "media-factory", about = "自媒体内容工厂：改写 → 生图 → 播客 → 视频")]
 struct Cli {
