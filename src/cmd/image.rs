@@ -22,13 +22,11 @@ pub async fn distill_prompt(llm: &dyn LlmAgent, text: &str) -> anyhow::Result<St
 
 /// 核心流程（可注入 llm 与 provider 以便测试）
 pub async fn run_with(
-    output_root: &Path,
-    id: &str,
+    dir: &Path,
     reference: Option<PathBuf>,
     llm: &dyn LlmAgent,
     provider: &dyn ImageProvider,
 ) -> anyhow::Result<()> {
-    let dir = output_root.join(id);
     let rewritten_path = dir.join("rewritten.md");
     anyhow::ensure!(
         rewritten_path.exists(),
@@ -60,26 +58,18 @@ pub async fn run_with(
 
 /// 公开入口
 pub async fn run(id: Option<String>, reference: Option<String>) -> anyhow::Result<String> {
-    let id = resolve_id(id)?;
+    let dir = match &id {
+        Some(i) => super::task_dir(Path::new("output"), i),
+        None => super::latest_task_dir(Path::new("output"))?,
+    };
+    let id = dir
+        .file_name()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_default();
     let reference = reference.map(PathBuf::from);
     let cfg = Config::load(&Config::path())?;
     let llm = PiRpcAgent::new(cfg.tasks.llm.clone().map(|l| l.model))?;
     let provider = provider::resolve_image(&cfg)?;
-    run_with(Path::new("output"), &id, reference, &llm, provider.as_ref()).await?;
+    run_with(&dir, reference, &llm, provider.as_ref()).await?;
     Ok(id)
-}
-
-/// 任务 id：显式指定 or 取 output/ 下最新目录
-fn resolve_id(id: Option<String>) -> anyhow::Result<String> {
-    if let Some(id) = id {
-        return Ok(id);
-    }
-    let mut dirs: Vec<_> = std::fs::read_dir("output")?
-        .filter_map(|e| e.ok())
-        .filter(|e| e.path().is_dir())
-        .collect();
-    dirs.sort_by_key(|e| e.file_name());
-    dirs.last()
-        .map(|e| e.file_name().to_string_lossy().to_string())
-        .ok_or_else(|| anyhow::anyhow!("未找到任务目录，请用 --id 指定或先运行 rewrite"))
 }

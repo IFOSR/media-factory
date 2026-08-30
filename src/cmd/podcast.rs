@@ -16,13 +16,11 @@ fn script_prompt_template() -> String {
 
 /// 核心流程（可注入 llm 与 backend 以便测试）
 pub async fn run_with(
-    output_root: &Path,
-    id: &str,
+    dir: &Path,
     llm: &dyn LlmAgent,
     backend: &PodcastBackend,
     force_script: bool,
 ) -> anyhow::Result<()> {
-    let dir = output_root.join(id);
     let rewritten_path = dir.join("rewritten.md");
     anyhow::ensure!(
         rewritten_path.exists(),
@@ -33,8 +31,8 @@ pub async fn run_with(
     let script_path = dir.join("script.md");
 
     match backend {
-        PodcastBackend::Volc(v) => run_volc(v, &dir, &script_path, &text, force_script).await,
-        PodcastBackend::Tts(t) => run_tts(t.as_ref(), &dir, &script_path, &text, llm).await,
+        PodcastBackend::Volc(v) => run_volc(v, dir, &script_path, &text, force_script).await,
+        PodcastBackend::Tts(t) => run_tts(t.as_ref(), dir, &script_path, &text, llm).await,
     }
 }
 
@@ -143,24 +141,17 @@ fn write_audio(dir: &Path, bytes: &[u8]) -> anyhow::Result<()> {
 
 /// 公开入口
 pub async fn run(id: Option<String>, force_script: bool) -> anyhow::Result<String> {
-    let id = resolve_id(id)?;
+    let dir = match &id {
+        Some(i) => super::task_dir(Path::new("output"), i),
+        None => super::latest_task_dir(Path::new("output"))?,
+    };
+    let id = dir
+        .file_name()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_default();
     let cfg = Config::load(&Config::path())?;
     let llm = PiRpcAgent::new(cfg.tasks.llm.clone().map(|l| l.model))?;
     let backend = podcast::resolve_podcast(&cfg)?;
-    run_with(Path::new("output"), &id, &llm, &backend, force_script).await?;
+    run_with(&dir, &llm, &backend, force_script).await?;
     Ok(id)
-}
-
-fn resolve_id(id: Option<String>) -> anyhow::Result<String> {
-    if let Some(id) = id {
-        return Ok(id);
-    }
-    let mut dirs: Vec<_> = std::fs::read_dir("output")?
-        .filter_map(|e| e.ok())
-        .filter(|e| e.path().is_dir())
-        .collect();
-    dirs.sort_by_key(|e| e.file_name());
-    dirs.last()
-        .map(|e| e.file_name().to_string_lossy().to_string())
-        .ok_or_else(|| anyhow::anyhow!("未找到任务目录，请用 --id 指定或先运行 rewrite"))
 }

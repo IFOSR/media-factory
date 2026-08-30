@@ -34,14 +34,15 @@ pub async fn run_with_config(
     reference: Option<PathBuf>,
 ) -> anyhow::Result<()> {
     let id = rewrite::run_with(output_root, source, id, llm).await?;
+    let dir = output_root.join(&id);
 
     let img_provider = provider::resolve_image(cfg)?;
-    image::run_with(output_root, &id, reference, llm, img_provider.as_ref()).await?;
+    image::run_with(&dir, reference, llm, img_provider.as_ref()).await?;
 
     let backend = podcast_backend::resolve_podcast(cfg)?;
-    podcast::run_with(output_root, &id, llm, &backend, false).await?;
+    podcast::run_with(&dir, llm, &backend, false).await?;
 
-    video::run_with(output_root, &id)?;
+    video::run_with(&dir)?;
 
     println!("完成！产物目录: {}/{}/", output_root.display(), id);
     Ok(())

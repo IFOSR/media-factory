@@ -2,8 +2,7 @@ use std::path::Path;
 
 use crate::ffmpeg;
 
-pub fn run_with(output_root: &Path, id: &str) -> anyhow::Result<()> {
-    let dir = output_root.join(id);
+pub fn run_with(dir: &Path) -> anyhow::Result<()> {
     let image = dir.join("image.png");
     let audio = dir.join("podcast.mp3");
     anyhow::ensure!(
@@ -24,21 +23,14 @@ pub fn run_with(output_root: &Path, id: &str) -> anyhow::Result<()> {
 }
 
 pub fn run(id: Option<String>) -> anyhow::Result<String> {
-    let id = resolve_id(id)?;
-    run_with(Path::new("output"), &id)?;
+    let dir = match &id {
+        Some(i) => super::task_dir(Path::new("output"), i),
+        None => super::latest_task_dir(Path::new("output"))?,
+    };
+    let id = dir
+        .file_name()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_default();
+    run_with(&dir)?;
     Ok(id)
-}
-
-fn resolve_id(id: Option<String>) -> anyhow::Result<String> {
-    if let Some(id) = id {
-        return Ok(id);
-    }
-    let mut dirs: Vec<_> = std::fs::read_dir("output")?
-        .filter_map(|e| e.ok())
-        .filter(|e| e.path().is_dir())
-        .collect();
-    dirs.sort_by_key(|e| e.file_name());
-    dirs.last()
-        .map(|e| e.file_name().to_string_lossy().to_string())
-        .ok_or_else(|| anyhow::anyhow!("未找到任务目录，请用 --id 指定或先运行 rewrite"))
 }
