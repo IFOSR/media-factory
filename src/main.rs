@@ -2,9 +2,12 @@ use clap::{Parser, Subcommand};
 
 mod cmd;
 mod config;
+mod ffmpeg;
 mod llm;
 mod pi_rpc;
+mod podcast;
 mod provider;
+mod tts;
 mod wizard;
 
 #[derive(Parser)]
@@ -34,6 +37,8 @@ enum Commands {
     /// 步骤 3：基于改写文案生成播客
     Podcast {
         #[arg(long)] id: Option<String>,
+        /// 模式 B：先生成脚本（脚本已存在时直接按脚本合成）
+        #[arg(long)] script: bool,
     },
     /// 步骤 4：图片 + 播客合成视频
     Video {
@@ -57,6 +62,12 @@ async fn main() -> anyhow::Result<()> {
         }
         Commands::Image { id, r#ref } => {
             cmd::image::run(id, r#ref).await?;
+        }
+        Commands::Podcast { id, script } => {
+            cmd::podcast::run(id, script).await?;
+        }
+        Commands::Video { id } => {
+            cmd::video::run(id)?;
         }
         _ => println!("not implemented"),
     }

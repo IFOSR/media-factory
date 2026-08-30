@@ -1004,6 +1004,7 @@ dependencies = [
  "dialoguer",
  "dirs",
  "flate2",
+ "futures-util",
  "reqwest",
  "serde",
  "serde_json",
