@@ -75,11 +75,6 @@ impl BuiltinKind {
                 | (VolcTts, Podcast)
         )
     }
-
-    /// 是否为端到端播客 provider（走播客 API，不需脚本/拼接 fallback 路径）
-    pub fn is_podcast_api(&self) -> bool {
-        matches!(self, BuiltinKind::VolcPodcast)
-    }
 }
 
 /// 需要直连 API 的媒体任务（语言模型任务不走这里）

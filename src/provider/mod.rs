@@ -40,6 +40,7 @@ impl GeminiImage {
     }
 
     /// 测试用：覆盖 base_url
+    #[cfg(test)]
     pub fn with_base_url(mut self, base_url: String) -> Self {
         self.base_url = base_url;
         self

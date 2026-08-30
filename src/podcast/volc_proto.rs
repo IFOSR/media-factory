@@ -9,6 +9,9 @@
 //! - byte2: 左 4-bit = 序列化（0b0001 JSON / 0b0000 Raw），右 4-bit = 压缩（0b0000 无 / 0b0001 gzip）
 //! - byte3: 保留 0x00
 
+// 协议面常量/字段不全部被当前代码引用，保留作为协议文档与后续实现参考。
+#![allow(dead_code)]
+
 use flate2::read::GzDecoder;
 use std::io::Read;
 
@@ -48,11 +51,12 @@ pub struct Frame {
 
 /// 编码客户端请求帧（full client request，带 event number）
 pub fn encode_client_frame(event: u32, session_id: &str, payload: &[u8]) -> Vec<u8> {
-    let mut out = Vec::new();
-    out.push(HDR);
-    out.push((MSG_FULL_CLIENT_REQUEST << 4) | FLAG_WITH_EVENT);
-    out.push(SER_JSON);
-    out.push(0x00);
+    let mut out = vec![
+        HDR,
+        (MSG_FULL_CLIENT_REQUEST << 4) | FLAG_WITH_EVENT,
+        SER_JSON,
+        0x00,
+    ];
     out.extend_from_slice(&event.to_be_bytes());
     out.extend_from_slice(&(session_id.len() as u32).to_be_bytes());
     out.extend_from_slice(session_id.as_bytes());

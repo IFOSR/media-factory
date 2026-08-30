@@ -145,21 +145,19 @@ impl LlmAgent for PiRpcAgent {
             }
             let v: serde_json::Value = serde_json::from_str(line)?;
             match v["type"].as_str() {
-                Some("response") => {
-                    if v["success"] == serde_json::Value::Bool(false) {
-                        rpc_error = Some(
-                            v["error"]
-                                .as_str()
-                                .unwrap_or("unknown error")
-                                .to_string(),
-                        );
-                    }
+                Some("response") if v["success"] == serde_json::Value::Bool(false) => {
+                    rpc_error = Some(
+                        v["error"]
+                            .as_str()
+                            .unwrap_or("unknown error")
+                            .to_string(),
+                    );
                 }
-                Some("message_update") => {
-                    if v["assistantMessageEvent"]["type"] == "text_delta" {
-                        if let Some(d) = v["assistantMessageEvent"]["delta"].as_str() {
-                            out.push_str(d);
-                        }
+                Some("message_update")
+                    if v["assistantMessageEvent"]["type"] == "text_delta" =>
+                {
+                    if let Some(d) = v["assistantMessageEvent"]["delta"].as_str() {
+                        out.push_str(d);
                     }
                 }
                 Some("agent_settled") => {

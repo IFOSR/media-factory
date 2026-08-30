@@ -52,9 +52,27 @@ enum Commands {
     },
 }
 
+fn require_pi() -> anyhow::Result<()> {
+    let ok = std::process::Command::new("pi")
+        .arg("--version")
+        .output()
+        .is_ok();
+    anyhow::ensure!(ok, "未找到 pi，请先安装（npm install -g @earendil-works/pi-coding-agent）");
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
+
+    // 前置检查：除 config 外都需要 pi；video/run 需要 ffmpeg
+    if !matches!(&cli.command, Commands::Config) {
+        require_pi()?;
+    }
+    if matches!(&cli.command, Commands::Video { .. } | Commands::Run { .. }) {
+        ffmpeg::require_ffmpeg()?;
+    }
+
     match cli.command {
         Commands::Config => wizard::run()?,
         Commands::Rewrite { input, id } => {

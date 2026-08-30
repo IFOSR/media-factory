@@ -42,12 +42,6 @@ impl VolcPodcast {
         }
     }
 
-    /// 测试用：覆盖 ws_url
-    pub fn with_ws_url(mut self, url: String) -> Self {
-        self.ws_url = url;
-        self
-    }
-
     /// 当前配置的两个发音人 (host, guest)
     pub fn speakers(&self) -> (String, String) {
         self.speakers.clone()
@@ -135,13 +129,11 @@ impl VolcPodcast {
                     volc_proto::EV_PODCAST_ROUND_RESPONSE => {
                         audio_buf.extend_from_slice(&f.payload);
                     }
-                    volc_proto::EV_PODCAST_ROUND_START => {
-                        if req.only_nlp_text {
-                            let v: serde_json::Value = serde_json::from_slice(&f.payload)?;
-                            let speaker = v["speaker"].as_str().unwrap_or("");
-                            let text = v["text"].as_str().unwrap_or("");
-                            script_lines.push(format!("{speaker}：{text}"));
-                        }
+                    volc_proto::EV_PODCAST_ROUND_START if req.only_nlp_text => {
+                        let v: serde_json::Value = serde_json::from_slice(&f.payload)?;
+                        let speaker = v["speaker"].as_str().unwrap_or("");
+                        let text = v["text"].as_str().unwrap_or("");
+                        script_lines.push(format!("{speaker}：{text}"));
                     }
                     volc_proto::EV_PODCAST_END => {
                         if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&f.payload) {
