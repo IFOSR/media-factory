@@ -1,39 +1,35 @@
-//! 火山播客 API WebSocket v3 二进制帧编解码。
+//! 火山播客 API WebSocket v3 二进制帧编解码（据文档+服务器实测修正）。
 //!
-//! 帧结构（自官方文档推导）：
-//! `[4字节 header][4字节 event_type u32 BE][4字节 session_id_len u32 BE][session_id][4字节 payload_len u32 BE][payload]`
+//! 客户端请求帧：`[header 4][event u32 BE][body_size u32 BE][body]`
+//! - header = [0x11, 0x14, 0x10, 0x00]（protocol v1 / 4字节 header / message type 0b0001 / flags 0b0100 带 event / JSON / 无压缩）
+//! - 首帧 event = 1（StartSession），结束帧 event = 2（FinishConnection）
 //!
-//! header：
-//! - byte0: 0x11（protocol v1 + 4 字节 header）
-//! - byte1: 左 4-bit = message type，右 4-bit = flags（0b0100 = 带 event number）
-//! - byte2: 左 4-bit = 序列化（0b0001 JSON / 0b0000 Raw），右 4-bit = 压缩（0b0000 无 / 0b0001 gzip）
-//! - byte3: 保留 0x00
+//! 服务端响应帧：`[header][event u32 BE][id_len u32 BE][id][body_size u32 BE][body]`
+//! - 非音频响应 message type 0b1001，音频响应 message type 0b1011，错误帧 byte1=0xF0
+//!
+//! 整数大端。
 
-// 协议面常量/字段不全部被当前代码引用，保留作为协议文档与后续实现参考。
+// 协议面常量不全部被当前代码引用，保留作为协议文档与后续实现参考。
 #![allow(dead_code)]
 
 use flate2::read::GzDecoder;
 use std::io::Read;
 
 pub const HDR: u8 = 0x11;
-
-// message type（byte1 左 4-bit）
-pub const MSG_FULL_CLIENT_REQUEST: u8 = 0b1001;
+pub const MSG_FULL_CLIENT_REQUEST: u8 = 0b0001;
 pub const MSG_AUDIO_ONLY_RESPONSE: u8 = 0b1011;
 pub const MSG_OTHER_RESPONSE: u8 = 0b1001;
 pub const MSG_ERROR: u8 = 0b1111;
-
 pub const FLAG_WITH_EVENT: u8 = 0b0100;
 pub const SER_JSON: u8 = 0x10;
 pub const COMPRESSION_GZIP: u8 = 0x01;
 
 // 上行 event type
-pub const EV_START_SESSION: u32 = 0;
-pub const EV_FINISH_SESSION: u32 = 1;
+pub const EV_START_SESSION: u32 = 1;
 pub const EV_FINISH_CONNECTION: u32 = 2;
 
-// 下行 event type
-pub const EV_SESSION_STARTED: u32 = 150;
+// 下行 event type（SessionStarted 实测为 50，文档写 150 有误）
+pub const EV_SESSION_STARTED: u32 = 50;
 pub const EV_SESSION_FINISHED: u32 = 152;
 pub const EV_USAGE_RESPONSE: u32 = 154;
 pub const EV_PODCAST_ROUND_START: u32 = 360;
@@ -45,12 +41,11 @@ pub const EV_PODCAST_END: u32 = 363;
 pub struct Frame {
     pub message_type: u8,
     pub event: u32,
-    pub session_id: String,
     pub payload: Vec<u8>,
 }
 
 /// 编码客户端请求帧（full client request，带 event number）
-pub fn encode_client_frame(event: u32, session_id: &str, payload: &[u8]) -> Vec<u8> {
+pub fn encode_client_frame(event: u32, payload: &[u8]) -> Vec<u8> {
     let mut out = vec![
         HDR,
         (MSG_FULL_CLIENT_REQUEST << 4) | FLAG_WITH_EVENT,
@@ -58,8 +53,6 @@ pub fn encode_client_frame(event: u32, session_id: &str, payload: &[u8]) -> Vec<
         0x00,
     ];
     out.extend_from_slice(&event.to_be_bytes());
-    out.extend_from_slice(&(session_id.len() as u32).to_be_bytes());
-    out.extend_from_slice(session_id.as_bytes());
     out.extend_from_slice(&(payload.len() as u32).to_be_bytes());
     out.extend_from_slice(payload);
     out
@@ -79,7 +72,7 @@ fn take_bytes(bytes: &[u8], pos: &mut usize, len: usize) -> anyhow::Result<Vec<u
     Ok(v)
 }
 
-/// 解码服务端帧
+/// 解码服务端帧：`[header][event][id_len][id][body_size][body]`
 pub fn decode_frame(bytes: &[u8]) -> anyhow::Result<Frame> {
     anyhow::ensure!(bytes.len() >= 4, "帧太短");
     let message_type = bytes[1] >> 4;
@@ -95,7 +88,6 @@ pub fn decode_frame(bytes: &[u8]) -> anyhow::Result<Frame> {
         return Ok(Frame {
             message_type,
             event: code,
-            session_id: String::new(),
             payload,
         });
     }
@@ -106,8 +98,8 @@ pub fn decode_frame(bytes: &[u8]) -> anyhow::Result<Frame> {
     } else {
         0
     };
-    let sid_len = take_u32(bytes, &mut pos)? as usize;
-    let session_id = String::from_utf8_lossy(&take_bytes(bytes, &mut pos, sid_len)?).to_string();
+    let id_len = take_u32(bytes, &mut pos)? as usize;
+    let _id = take_bytes(bytes, &mut pos, id_len)?;
     let plen = take_u32(bytes, &mut pos)? as usize;
     let mut payload = take_bytes(bytes, &mut pos, plen)?;
 
@@ -121,7 +113,6 @@ pub fn decode_frame(bytes: &[u8]) -> anyhow::Result<Frame> {
     Ok(Frame {
         message_type,
         event,
-        session_id,
         payload,
     })
 }
@@ -131,45 +122,38 @@ mod tests {
     use super::*;
 
     #[test]
-    fn client_frame_roundtrip() {
-        let frame = encode_client_frame(EV_START_SESSION, "abcd1234", br#"{"action":0}"#);
-        assert_eq!(frame[0], 0x11);
-        assert_eq!(frame[1], 0x94); // 0b1001_0100
-        assert_eq!(frame[2], 0x10);
-        assert_eq!(frame[3], 0x00);
-        // 解码（客户端帧也能被 decode_frame 解析，结构一致）
-        let decoded = decode_frame(&frame).unwrap();
-        assert_eq!(decoded.message_type, MSG_FULL_CLIENT_REQUEST);
-        assert_eq!(decoded.event, EV_START_SESSION);
-        assert_eq!(decoded.session_id, "abcd1234");
-        assert_eq!(decoded.payload, br#"{"action":0}"#);
+    fn client_frame_encoding() {
+        let frame = encode_client_frame(EV_START_SESSION, br#"{"action":0}"#);
+        assert_eq!(&frame[0..4], &[0x11, 0x14, 0x10, 0x00]);
+        assert_eq!(&frame[4..8], &1u32.to_be_bytes()); // event=StartSession(1)
+        assert_eq!(&frame[8..12], &12u32.to_be_bytes()); // body size
+        assert_eq!(&frame[12..], br#"{"action":0}"#);
     }
 
     #[test]
-    fn server_audio_frame_decodes() {
-        // 构造一帧服务端音频响应（event 361）
+    fn server_frame_with_id_decodes() {
         let mut frame = Vec::new();
         frame.push(HDR);
-        frame.push((MSG_AUDIO_ONLY_RESPONSE << 4) | FLAG_WITH_EVENT);
-        frame.push(0x00); // Raw, no compression
+        frame.push((MSG_OTHER_RESPONSE << 4) | FLAG_WITH_EVENT);
+        frame.push(0x10);
         frame.push(0x00);
-        frame.extend_from_slice(&EV_PODCAST_ROUND_RESPONSE.to_be_bytes());
-        frame.extend_from_slice(&(8u32).to_be_bytes());
-        frame.extend_from_slice(b"abcd1234");
+        frame.extend_from_slice(&EV_SESSION_STARTED.to_be_bytes());
+        frame.extend_from_slice(&(4u32).to_be_bytes());
+        frame.extend_from_slice(b"abcd");
         frame.extend_from_slice(&(5u32).to_be_bytes());
-        frame.extend_from_slice(b"MP3XX");
+        frame.extend_from_slice(b"hello");
 
         let decoded = decode_frame(&frame).unwrap();
-        assert_eq!(decoded.message_type, MSG_AUDIO_ONLY_RESPONSE);
-        assert_eq!(decoded.event, EV_PODCAST_ROUND_RESPONSE);
-        assert_eq!(decoded.payload, b"MP3XX");
+        assert_eq!(decoded.message_type, MSG_OTHER_RESPONSE);
+        assert_eq!(decoded.event, EV_SESSION_STARTED);
+        assert_eq!(decoded.payload, b"hello");
     }
 
     #[test]
     fn error_frame_decodes() {
         let mut frame = Vec::new();
         frame.push(HDR);
-        frame.push(0xF0); // 0b1111_0000
+        frame.push(0xF0);
         frame.push(0x10);
         frame.push(0x00);
         frame.extend_from_slice(&1001u32.to_be_bytes());
