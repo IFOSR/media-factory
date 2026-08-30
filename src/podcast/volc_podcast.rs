@@ -165,7 +165,7 @@ impl VolcPodcast {
         let mut script_lines: Vec<String> = Vec::new();
         let mut subtitles: Vec<super::SubtitleEntry> = Vec::new();
         // 当前轮次：RoundStart 给出文本/说话人，RoundEnd 给出起止时间
-        let mut cur_round_text: Option<String> = None;
+        let mut cur_round: Option<(String, String)> = None;
 
         // 4. 读生成事件：PodcastRoundResponse(361) 音频、RoundStart(360) 文本、PodcastEnd(363)、SessionFinished(152)
         let read_loop = async {
@@ -185,17 +185,20 @@ impl VolcPodcast {
                         }
                         // round_id -1=片头音乐 9999=片尾音乐，无正文，跳过字幕
                         if round_id != -1 && round_id != 9999 && !text.is_empty() {
-                            cur_round_text = Some(format!("{}：{text}", self.speaker_label(speaker)));
+                            cur_round = Some((self.speaker_label(speaker), text.to_string()));
                         } else {
-                            cur_round_text = None;
+                            cur_round = None;
                         }
                     }
                     volc_proto::EV_PODCAST_ROUND_END => {
                         if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&f.payload) {
                             let start = v["start_time"].as_f64().unwrap_or(0.0);
                             let end = v["end_time"].as_f64().unwrap_or(0.0);
-                            if let Some(t) = cur_round_text.take() {
-                                subtitles.push(super::SubtitleEntry { start, end, text: t });
+                            if let Some((speaker, text)) = cur_round.take() {
+                                // 按句子切分成单行字幕，时间按字数比例分配
+                                let mut entries =
+                                    super::split_subtitle_entries(&speaker, &text, start, end);
+                                subtitles.append(&mut entries);
                             }
                         }
                     }
