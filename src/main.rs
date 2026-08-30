@@ -74,7 +74,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     match cli.command {
-        Commands::Config => wizard::run()?,
+        Commands::Config => wizard::run().await?,
         Commands::Rewrite { input, id } => {
             cmd::rewrite::run(input, id).await?;
         }

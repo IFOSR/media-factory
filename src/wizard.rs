@@ -92,7 +92,7 @@ fn builtin_extra_keys(kind: BuiltinKind) -> &'static [&'static str] {
     }
 }
 
-pub fn run() -> anyhow::Result<()> {
+pub async fn run() -> anyhow::Result<()> {
     let path = Config::path();
     let mut cfg = Config::load(&path)?;
     loop {
@@ -110,7 +110,7 @@ pub fn run() -> anyhow::Result<()> {
             .default(0)
             .interact()?;
         match sel {
-            0 => bind_llm(&mut cfg)?,
+            0 => bind_llm(&mut cfg).await?,
             1 => bind_media(&mut cfg, MediaTaskKind::Image)?,
             2 => bind_media(&mut cfg, MediaTaskKind::Podcast)?,
             3 => add_custom(&mut cfg)?,
@@ -131,13 +131,13 @@ pub fn run() -> anyhow::Result<()> {
     }
 }
 
-fn bind_llm(cfg: &mut Config) -> anyhow::Result<()> {
-    let resp = tokio::runtime::Runtime::new()?
-        .block_on(pi_rpc::rpc_once(
-            std::path::Path::new("pi"),
-            None,
-            serde_json::json!({"type": "get_available_models"}),
-        ))?;
+async fn bind_llm(cfg: &mut Config) -> anyhow::Result<()> {
+    let resp = pi_rpc::rpc_once(
+        std::path::Path::new("pi"),
+        None,
+        serde_json::json!({"type": "get_available_models"}),
+    )
+    .await?;
 
     let models = parse_available_models(&resp);
     if models.is_empty() {
