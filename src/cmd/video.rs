@@ -17,8 +17,14 @@ pub fn run_with(dir: &Path) -> anyhow::Result<()> {
     );
 
     let out = dir.join("video.mp4");
-    ffmpeg::make_video(&image, &audio, &out)?;
-    println!("✓ 视频完成: {}", out.display());
+    let srt = dir.join("subtitle.srt");
+    let subtitle = if srt.exists() { Some(srt.as_path()) } else { None };
+    ffmpeg::make_video(&image, &audio, subtitle, &out)?;
+    if subtitle.is_some() {
+        println!("✓ 视频完成（含字幕）: {}", out.display());
+    } else {
+        println!("✓ 视频完成: {}", out.display());
+    }
     Ok(())
 }
 

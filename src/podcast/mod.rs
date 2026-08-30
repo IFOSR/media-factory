@@ -8,6 +8,34 @@ use crate::tts;
 pub use script::{parse_script, to_nlp_texts};
 pub use volc_podcast::{PodcastRequest, PodcastResult, VolcPodcast};
 
+/// 一条字幕（起止时间单位为秒）
+#[derive(Debug, Clone)]
+pub struct SubtitleEntry {
+    pub start: f64,
+    pub end: f64,
+    pub text: String,
+}
+
+/// 把字幕条目写成 SRT 文件（标准字幕格式）
+pub fn write_srt(path: &std::path::Path, entries: &[SubtitleEntry]) -> anyhow::Result<()> {
+    fn ts(secs: f64) -> String {
+        let ms = (secs.fract() * 1000.0).round() as u64;
+        let total = secs.floor() as u64;
+        let h = total / 3600;
+        let m = (total % 3600) / 60;
+        let s = total % 60;
+        format!("{h:02}:{m:02}:{s:02},{ms:03}")
+    }
+    let mut out = String::new();
+    for (i, e) in entries.iter().enumerate() {
+        out.push_str(&format!("{}\n", i + 1));
+        out.push_str(&format!("{} --> {}\n", ts(e.start), ts(e.end)));
+        out.push_str(&format!("{}\n\n", e.text));
+    }
+    std::fs::write(path, out)?;
+    Ok(())
+}
+
 /// 播客后端：火山播客 API（端到端）或通用 TTS（fallback）
 pub enum PodcastBackend {
     Volc(VolcPodcast),

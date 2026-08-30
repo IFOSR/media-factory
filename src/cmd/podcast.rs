@@ -73,10 +73,15 @@ async fn run_volc(
                 only_nlp_text: false,
             })
             .await?;
-        let PodcastResult::Audio(bytes) = res else {
+        let PodcastResult::Audio { bytes, subtitles } = res else {
             anyhow::bail!("预期返回音频，但得到了脚本");
         };
         write_audio(dir, &bytes)?;
+        if !subtitles.is_empty() {
+            let srt = dir.join("subtitle.srt");
+            podcast::write_srt(&srt, &subtitles)?;
+            println!("✓ 字幕已生成: {}", srt.display());
+        }
         return Ok(());
     }
 
@@ -88,10 +93,16 @@ async fn run_volc(
             only_nlp_text: false,
         })
         .await?;
-    let PodcastResult::Audio(bytes) = res else {
+    let PodcastResult::Audio { bytes, subtitles } = res else {
         anyhow::bail!("预期返回音频，但得到了脚本");
     };
-    write_audio(dir, &bytes)
+    write_audio(dir, &bytes)?;
+    if !subtitles.is_empty() {
+        let srt = dir.join("subtitle.srt");
+        podcast::write_srt(&srt, &subtitles)?;
+        println!("✓ 字幕已生成: {}", srt.display());
+    }
+    Ok(())
 }
 
 async fn run_tts(

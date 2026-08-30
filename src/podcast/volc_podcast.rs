@@ -17,8 +17,11 @@ pub struct PodcastRequest {
 }
 
 pub enum PodcastResult {
-    /// 完整播客音频（mp3 字节）
-    Audio(Vec<u8>),
+    /// 完整播客音频（mp3 字节）+ 字幕条目（含时间戳）
+    Audio {
+        bytes: Vec<u8>,
+        subtitles: Vec<super::SubtitleEntry>,
+    },
     /// 播客脚本文本（only_nlp_text 模式）
     ScriptText(String),
 }
@@ -45,6 +48,17 @@ impl VolcPodcast {
     /// 当前配置的两个发音人 (host, guest)
     pub fn speakers(&self) -> (String, String) {
         self.speakers.clone()
+    }
+
+    /// 把音色 ID 映射成友好称呼
+    fn speaker_label(&self, speaker: &str) -> String {
+        if speaker == self.speakers.0 {
+            "主持人".to_string()
+        } else if speaker == self.speakers.1 {
+            "嘉宾".to_string()
+        } else {
+            speaker.to_string()
+        }
     }
 
     fn build_payload(&self, req: &PodcastRequest) -> serde_json::Value {
@@ -149,6 +163,9 @@ impl VolcPodcast {
         let mut audio_buf: Vec<u8> = Vec::new();
         let mut audio_url: Option<String> = None;
         let mut script_lines: Vec<String> = Vec::new();
+        let mut subtitles: Vec<super::SubtitleEntry> = Vec::new();
+        // 当前轮次：RoundStart 给出文本/说话人，RoundEnd 给出起止时间
+        let mut cur_round_text: Option<String> = None;
 
         // 4. 读生成事件：PodcastRoundResponse(361) 音频、RoundStart(360) 文本、PodcastEnd(363)、SessionFinished(152)
         let read_loop = async {
@@ -158,11 +175,29 @@ impl VolcPodcast {
                     volc_proto::EV_PODCAST_ROUND_RESPONSE => {
                         audio_buf.extend_from_slice(&f.payload);
                     }
-                    volc_proto::EV_PODCAST_ROUND_START if req.only_nlp_text => {
+                    volc_proto::EV_PODCAST_ROUND_START => {
                         let v: serde_json::Value = serde_json::from_slice(&f.payload)?;
                         let speaker = v["speaker"].as_str().unwrap_or("");
                         let text = v["text"].as_str().unwrap_or("");
-                        script_lines.push(format!("{speaker}：{text}"));
+                        let round_id = v["round_id"].as_i64().unwrap_or(-1);
+                        if req.only_nlp_text {
+                            script_lines.push(format!("{}：{text}", self.speaker_label(speaker)));
+                        }
+                        // round_id -1=片头音乐 9999=片尾音乐，无正文，跳过字幕
+                        if round_id != -1 && round_id != 9999 && !text.is_empty() {
+                            cur_round_text = Some(format!("{}：{text}", self.speaker_label(speaker)));
+                        } else {
+                            cur_round_text = None;
+                        }
+                    }
+                    volc_proto::EV_PODCAST_ROUND_END => {
+                        if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&f.payload) {
+                            let start = v["start_time"].as_f64().unwrap_or(0.0);
+                            let end = v["end_time"].as_f64().unwrap_or(0.0);
+                            if let Some(t) = cur_round_text.take() {
+                                subtitles.push(super::SubtitleEntry { start, end, text: t });
+                            }
+                        }
                     }
                     volc_proto::EV_PODCAST_END => {
                         if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&f.payload) {
@@ -192,13 +227,14 @@ impl VolcPodcast {
             return Ok(PodcastResult::ScriptText(script_lines.join("\n")));
         }
 
-        if let Some(url) = audio_url {
+        let bytes = if let Some(url) = audio_url {
             let resp = self.client.get(&url).send().await?;
             anyhow::ensure!(resp.status().is_success(), "下载播客音频失败: {}", resp.status());
-            return Ok(PodcastResult::Audio(resp.bytes().await?.to_vec()));
-        }
-
-        anyhow::ensure!(!audio_buf.is_empty(), "播客 API 未返回音频");
-        Ok(PodcastResult::Audio(audio_buf))
+            resp.bytes().await?.to_vec()
+        } else {
+            anyhow::ensure!(!audio_buf.is_empty(), "播客 API 未返回音频");
+            audio_buf
+        };
+        Ok(PodcastResult::Audio { bytes, subtitles })
     }
 }
