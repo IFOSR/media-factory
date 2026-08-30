@@ -98,25 +98,14 @@ impl VolcPodcast {
 
         let (mut ws, _resp) = tokio_tungstenite::connect_async(request).await?;
 
-        // 发送首帧（StartSession，event=1）
-        let payload = self.build_payload(req);
-        let frame = volc_proto::encode_client_frame(
-            volc_proto::EV_START_SESSION,
-            payload.to_string().as_bytes(),
-        );
-        ws.send(Message::Binary(frame)).await?;
-
-        let mut audio_buf: Vec<u8> = Vec::new();
-        let mut audio_url: Option<String> = None;
-        let mut script_lines: Vec<String> = Vec::new();
-
-        // 读事件（加超时，避免服务器不发结束事件时挂死）
-        let read_loop = async {
-            while let Some(msg) = ws.next().await {
-                let msg = msg?;
-                match msg {
-                    Message::Binary(data) => {
-                        let f: Frame = volc_proto::decode_frame(&data)?;
+        // 读取一个服务端帧；错误帧直接报错；返回事件号
+        async fn next_event(
+            ws: &mut tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
+        ) -> anyhow::Result<Frame> {
+            loop {
+                match ws.next().await {
+                    Some(Ok(Message::Binary(data))) => {
+                        let f = volc_proto::decode_frame(&data)?;
                         if f.message_type == volc_proto::MSG_ERROR {
                             anyhow::bail!(
                                 "播客 API 返回错误（code {}）: {}",
@@ -124,45 +113,75 @@ impl VolcPodcast {
                                 String::from_utf8_lossy(&f.payload)
                             );
                         }
-                        match f.event {
-                            volc_proto::EV_PODCAST_ROUND_RESPONSE => {
-                                audio_buf.extend_from_slice(&f.payload);
-                            }
-                            volc_proto::EV_PODCAST_ROUND_START if req.only_nlp_text => {
-                                let v: serde_json::Value = serde_json::from_slice(&f.payload)?;
-                                let speaker = v["speaker"].as_str().unwrap_or("");
-                                let text = v["text"].as_str().unwrap_or("");
-                                script_lines.push(format!("{speaker}：{text}"));
-                            }
-                            volc_proto::EV_PODCAST_END => {
-                                if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&f.payload) {
-                                    audio_url = v["meta_info"]["audio_url"].as_str().map(|s| s.to_string());
-                                }
-                            }
-                            volc_proto::EV_SESSION_FINISHED => break,
-                            _ => {}
-                        }
+                        return Ok(f);
                     }
-                    Message::Ping(_) => {
+                    Some(Ok(Message::Ping(_))) => {
                         let _ = ws.send(Message::Pong(vec![])).await;
                     }
-                    Message::Pong(_) => {}
-                    Message::Close(_c) => {
-                        break;
+                    Some(Ok(Message::Close(_))) => anyhow::bail!("连接被服务器关闭"),
+                    Some(Ok(_)) => {}
+                    Some(Err(e)) => anyhow::bail!("WebSocket 错误: {e}"),
+                    None => anyhow::bail!("连接结束"),
+                }
+            }
+        }
+
+        // 1. start_connection（event=1，无 session_id）→ ConnectionStarted(50)
+        let frame = volc_proto::encode_client_frame(volc_proto::EV_START_CONNECTION, None, b"{}");
+        ws.send(Message::Binary(frame)).await?;
+        next_event(&mut ws).await?;
+
+        // 2. start_session（event=100，带 session_id + 请求 payload）→ SessionStarted(150)
+        let session_id = uuid::Uuid::new_v4().to_string();
+        let payload = self.build_payload(req);
+        let frame = volc_proto::encode_client_frame(
+            volc_proto::EV_START_SESSION,
+            Some(&session_id),
+            payload.to_string().as_bytes(),
+        );
+        ws.send(Message::Binary(frame)).await?;
+        next_event(&mut ws).await?;
+
+        // 3. finish_session（event=102）触发生成
+        let frame = volc_proto::encode_client_frame(volc_proto::EV_FINISH_SESSION, Some(&session_id), b"{}");
+        ws.send(Message::Binary(frame)).await?;
+
+        let mut audio_buf: Vec<u8> = Vec::new();
+        let mut audio_url: Option<String> = None;
+        let mut script_lines: Vec<String> = Vec::new();
+
+        // 4. 读生成事件：PodcastRoundResponse(361) 音频、RoundStart(360) 文本、PodcastEnd(363)、SessionFinished(152)
+        let read_loop = async {
+            loop {
+                let f = next_event(&mut ws).await?;
+                match f.event {
+                    volc_proto::EV_PODCAST_ROUND_RESPONSE => {
+                        audio_buf.extend_from_slice(&f.payload);
                     }
-                    Message::Text(_) => {}
-                    Message::Frame(_) => {}
+                    volc_proto::EV_PODCAST_ROUND_START if req.only_nlp_text => {
+                        let v: serde_json::Value = serde_json::from_slice(&f.payload)?;
+                        let speaker = v["speaker"].as_str().unwrap_or("");
+                        let text = v["text"].as_str().unwrap_or("");
+                        script_lines.push(format!("{speaker}：{text}"));
+                    }
+                    volc_proto::EV_PODCAST_END => {
+                        if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&f.payload) {
+                            audio_url = v["meta_info"]["audio_url"].as_str().map(|s| s.to_string());
+                        }
+                    }
+                    volc_proto::EV_SESSION_FINISHED => break,
+                    _ => {}
                 }
             }
             anyhow::Ok(())
         };
-        tokio::time::timeout(std::time::Duration::from_secs(120), read_loop)
+        tokio::time::timeout(std::time::Duration::from_secs(600), read_loop)
             .await
-            .map_err(|_| anyhow::anyhow!("等待播客 API 响应超时（120s）"))??;
+            .map_err(|_| anyhow::anyhow!("等待播客生成超时（600s）"))??;
 
-        // 结束连接（finishConnection，event=2）
-        let finish = volc_proto::encode_client_frame(volc_proto::EV_FINISH_CONNECTION, b"{}");
-        let _ = ws.send(Message::Binary(finish)).await;
+        // 5. finish_connection（event=2）
+        let frame = volc_proto::encode_client_frame(volc_proto::EV_FINISH_CONNECTION, None, b"{}");
+        let _ = ws.send(Message::Binary(frame)).await;
         let _ = ws.close(None).await;
 
         if req.only_nlp_text {
