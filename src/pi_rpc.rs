@@ -24,6 +24,75 @@ impl PiRpcAgent {
     }
 }
 
+/// 一次性 RPC 命令：spawn pi，发一条命令，读回对应 response（含 data 字段）。
+/// 用于向导里的 get_available_models 等。
+pub async fn rpc_once(
+    binary: &std::path::Path,
+    model: Option<&str>,
+    command: serde_json::Value,
+) -> anyhow::Result<serde_json::Value> {
+    let mut cmd = Command::new(binary);
+    cmd.args(["--mode", "rpc", "--no-session"]);
+    if let Some(m) = model {
+        cmd.arg("--model").arg(m);
+    }
+    cmd.stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| anyhow::anyhow!("无法启动 pi（{}）: {e}", binary.display()))?;
+
+    let mut stdin = child.stdin.take().unwrap();
+    stdin
+        .write_all((command.to_string() + "\n").as_bytes())
+        .await?;
+    stdin.flush().await?;
+    drop(stdin);
+
+    let stderr = child.stderr.take().unwrap();
+    let stderr_task = tokio::spawn(async move {
+        let mut buf = Vec::new();
+        let mut reader = tokio::io::BufReader::new(stderr);
+        let _ = tokio::io::AsyncReadExt::read_to_end(&mut reader, &mut buf).await;
+        String::from_utf8_lossy(&buf).to_string()
+    });
+
+    let stdout = child.stdout.take().unwrap();
+    let mut lines = BufReader::new(stdout).lines();
+    let mut result: Option<serde_json::Value> = None;
+    let mut rpc_error: Option<String> = None;
+
+    while let Some(line) = lines.next_line().await? {
+        let line = line.trim_end_matches('\r');
+        if line.trim().is_empty() {
+            continue;
+        }
+        let v: serde_json::Value = serde_json::from_str(line)?;
+        if v["type"] == "response" {
+            if v["success"] == serde_json::Value::Bool(false) {
+                rpc_error = Some(v["error"].as_str().unwrap_or("unknown error").to_string());
+            } else {
+                result = Some(v["data"].clone());
+            }
+            break;
+        }
+    }
+
+    let status = child.wait().await?;
+    let stderr_text = stderr_task.await.unwrap_or_default();
+
+    if let Some(e) = rpc_error {
+        anyhow::bail!("pi RPC 错误: {e}");
+    }
+    if !status.success() {
+        let tail: String = stderr_text.chars().rev().take(2000).collect::<String>().chars().rev().collect();
+        anyhow::bail!("pi 进程异常退出（{}）: {}", status, tail);
+    }
+    Ok(result.unwrap_or(serde_json::Value::Null))
+}
+
 #[async_trait::async_trait]
 impl LlmAgent for PiRpcAgent {
     async fn complete(&self, prompt: &str) -> anyhow::Result<String> {

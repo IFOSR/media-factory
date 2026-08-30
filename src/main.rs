@@ -3,6 +3,7 @@ use clap::{Parser, Subcommand};
 mod config;
 mod llm;
 mod pi_rpc;
+mod wizard;
 
 #[derive(Parser)]
 #[command(name = "media-factory", about = "自媒体内容工厂：改写 → 生图 → 播客 → 视频")]
@@ -48,6 +49,7 @@ enum Commands {
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     match cli.command {
+        Commands::Config => wizard::run()?,
         _ => println!("not implemented"),
     }
     Ok(())
