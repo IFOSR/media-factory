@@ -72,7 +72,7 @@ providers:
 |---|---|
 | 语言模型（改写 / 图像 prompt 提炼 / 播客脚本） | **pi agent**：向导列出 pi 已认证的模型供选择；自定义 provider 走 pi 的 `models.json`，用户自行在 pi 侧配置 |
 | 生图 | 内置：nano-banana（Gemini Image，原生支持参考图）/ OpenAI gpt-image / 豆包 Seedream；支持 Other 自定义 |
-| 播客 TTS | 内置：Gemini TTS / OpenAI TTS / 火山豆包语音；支持 Other 自定义 |
+| 播客 | 内置：**火山播客大模型（volc-podcast，推荐默认，文案直接生成双人播客）** / Gemini TTS / OpenAI TTS / 火山豆包语音（volc-tts）；支持 Other 自定义 |
 
 ### 自定义 provider（Other）
 
@@ -85,7 +85,11 @@ providers:
 
 1. **改写**：参考文案（文件 / stdin）→ **pi agent** + 爆款 prompt 模板（情绪钩子、反差、悬念、口语化）→ `rewritten.md`。模板文件可让用户自行调整
 2. **生图**：**pi agent** 从改写文案提炼核心意象 → 生成图像 prompt → 调 image provider（media-factory 直连 API）。`--ref <图片>` 可选传参考图；provider 不支持参考图时降级为纯 prompt 并打印警告
-3. **播客**：改写文案 → **pi agent** 生成对话脚本（主持人/嘉宾双角色）→ `script.md` 落盘（可人工修改）→ 按台词分段调 TTS（两个不同音色）→ ffmpeg 拼接 → `podcast.mp3`
+3. **播客**：两种模式，由 provider 能力决定：
+   - **火山播客大模型（volc-podcast，默认）**：走播客 API（`wss://openspeech.bytedance.com/api/v3/sami/podcasttts`，[文档](https://www.volcengine.com/docs/6561/1668014)）
+     - **模式 A（默认，端到端）**：`rewritten.md` → `action=0` 一次调用 → 模型自动分析生成双人对话播客 → `podcast.mp3`
+     - **模式 B（`--script`，脚本可控）**：`action=0 + only_nlp_text=true` 先生成脚本 → `script.md` 落盘（可人工修改）→ 重跑时检测到 `script.md` 已存在，改用 `action=3` 按 `nlp_texts` 合成 → `podcast.mp3`
+   - **通用 TTS（gemini-tts / openai-tts / volc-tts，fallback）**：**pi agent** 生成对话脚本（主持人/嘉宾双角色）→ `script.md` 落盘（可人工修改）→ 按台词分段调 TTS（两个不同音色）→ ffmpeg 拼接 → `podcast.mp3`
 4. **视频**：`image.png` + `podcast.mp3` → ffmpeg 静态图循环 + 音频 → `video.mp4`（时长 = 音频时长）。字幕本期不做（YAGNI）
 
 ## 5. 技术栈
@@ -96,7 +100,8 @@ providers:
 - 交互式配置向导：`dialoguer`
 - 配置：`serde` + `serde_yaml`
 - HTTP 客户端：`reqwest`（生图 / TTS provider 直连 API 用）
-- ffmpeg：subprocess 调用系统 ffmpeg（依赖前置检查）
+- WebSocket：`tokio-tungstenite`（火山播客 API 的自定义二进制帧协议）
+- ffmpeg：subprocess 调用系统 ffmpeg（依赖前置检查；通用 TTS 路径拼接、视频合成用）
 
 ## 6. 错误处理
 

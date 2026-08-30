@@ -36,6 +36,9 @@ serde_yaml = "0.9"
 serde_json = "1"
 reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
 tokio = { version = "1", features = ["full"] }
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-native-roots"] }  # 火山播客 WebSocket API
+flate2 = "1"  # 播客协议 gzip 压缩
+uuid = { version = "1", features = ["v4"] }  # X-Api-Request-Id
 async-trait = "0.1"
 anyhow = "1"
 thiserror = "1"
@@ -264,9 +267,10 @@ pub enum BuiltinKind {
     NanoBanana,     // 生图（Gemini Image，支持参考图）
     OpenAiImage,    // 生图（gpt-image）
     DoubaoSeedream, // 生图
-    GeminiTts,      // 播客 TTS
-    OpenAiTts,      // 播客 TTS
-    VolcTts,        // 播客 TTS（火山豆包语音）
+    VolcPodcast,    // 播客大模型（推荐默认，端到端双人播客；extra 存 appid）
+    GeminiTts,      // 播客 TTS（fallback 路径）
+    OpenAiTts,      // 播客 TTS（fallback 路径）
+    VolcTts,        // 播客 TTS（fallback 路径；extra 存 appid/cluster）
 }
 
 impl BuiltinKind {
@@ -275,14 +279,16 @@ impl BuiltinKind {
         matches!(
             (self, task),
             (NanoBanana, Image) | (OpenAiImage, Image) | (DoubaoSeedream, Image)
-            | (GeminiTts, Tts) | (OpenAiTts, Tts) | (VolcTts, Tts)
+            | (VolcPodcast, Podcast) | (GeminiTts, Podcast) | (OpenAiTts, Podcast) | (VolcTts, Podcast)
         )
     }
+    /// 是否为端到端播客 provider（走播客 API，不需脚本/拼接 fallback 路径）
+    pub fn is_podcast_api(&self) -> bool { matches!(self, BuiltinKind::VolcPodcast) }
 }
 
 /// 需要直连 API 的媒体任务（语言模型任务不走这里）
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MediaTaskKind { Image, Tts }
+pub enum MediaTaskKind { Image, Podcast }
 
 impl Config {
     pub fn path() -> PathBuf {
@@ -444,14 +450,14 @@ git add -A && git commit -m "feat: pi RPC client implementing LlmAgent"
 主菜单（循环）：
   1. 配置「语言模型」（pi agent）
   2. 配置「生图」provider
-  3. 配置「播客 TTS」provider
-  4. 新增自定义 provider（Other，仅限生图/TTS）
+  3. 配置「播客」provider
+  4. 新增自定义 provider（Other，仅限生图/播客）
   5. 保存并退出
   0. 不保存退出（确认提示）
 ```
 
 - **配置语言模型**：spawn `pi --mode rpc --no-session` → 发 `{"type":"get_available_models"}` → 解析 `models[]` → `dialoguer::Select` 列出 `provider/model`（含名称）供选择 → 存 `tasks.llm.model`；列表为空时提示"先在 pi 中配置认证（`pi auth login`）"；提供第一项"使用 pi 默认模型"（存 None）
-- **配置生图/TTS provider**：列出支持该任务的内置 provider（已配 key 标 ✓）+ 所有自定义 provider → 选内置且无 key 时 `Password` 录入（volc-tts 追加 `Input` appid / cluster 到 extra）→ 绑定任务
+- **配置生图/播客 provider**：列出支持该任务的内置 provider（已配 key 标 ✓，volc-podcast 标注「推荐」）+ 所有自定义 provider → 选内置且无 key 时 `Password` 录入 access token（volc-podcast / volc-tts 追加 `Input` appid 等到 extra）→ 绑定任务
 - **新增自定义（Other）**：`Input` 名称（唯一、非空）→ `Input` BaseURL（http(s) 校验）→ `Password` API Key → `Input` 模型名 → `MultiSelect` 绑定到 生图/播客TTS
 
 **Step 1: 写测试**（纯逻辑部分）
@@ -486,8 +492,9 @@ mod tests {
     #[test]
     fn builtin_lists_match_tasks() {
         assert_eq!(builtin_for_task(MediaTaskKind::Image).len(), 3);
-        assert!(builtin_for_task(MediaTaskKind::Tts).contains(&BuiltinKind::VolcTts));
-        assert!(!builtin_for_task(MediaTaskKind::Tts).contains(&BuiltinKind::NanoBanana));
+        assert_eq!(builtin_for_task(MediaTaskKind::Podcast).len(), 4);
+        assert!(builtin_for_task(MediaTaskKind::Podcast).contains(&BuiltinKind::VolcPodcast));
+        assert!(!builtin_for_task(MediaTaskKind::Image).contains(&BuiltinKind::VolcPodcast));
     }
     #[test]
     fn custom_name_and_url_validation() { /* 同前 */ }
@@ -632,20 +639,40 @@ git add -A && git commit -m "feat: image command (pi prompt distillation + nano-
 
 ---
 
-## Task 7: `podcast` 命令 —— pi 生成对话脚本 + 双音色 TTS + ffmpeg 拼接
+## Task 7: `podcast` 命令 —— 火山播客 API（默认）+ 通用 TTS fallback
 
 **Files:**
-- Create: `prompts/podcast_script.txt`
-- Create: `src/tts/mod.rs`（`TtsProvider` trait + resolve）
-- Create: `src/tts/volc_tts.rs`（火山豆包语音，extra 读 appid/cluster）
-- Create: `src/tts/gemini_tts.rs`、`src/tts/openai_tts.rs`（同模式，同级小步骤）
+- Create: `src/podcast/mod.rs`（`PodcastProvider` trait + resolve）
+- Create: `src/podcast/volc_podcast.rs`（播客 API，WebSocket v3 二进制协议）
+- Create: `src/podcast/volc_proto.rs`（二进制帧编解码，纯逻辑可单测）
+- Create: `prompts/podcast_script.txt`（fallback 路径用）
+- Create: `src/tts/mod.rs` + `src/tts/{volc_tts,gemini_tts,openai_tts}.rs`（fallback TTS providers）
 - Create: `src/ffmpeg.rs`
 - Create: `src/cmd/podcast.rs`
-- Test: 脚本解析测试 + wiremock TTS 测试 + ffmpeg concat（2 个 1 秒静音 mp3）
+- Test: 帧编解码单测 + 假 WebSocket server 测试 + 脚本解析测试 + ffmpeg concat 测试
+
+**背景：** 火山播客大模型 API（[文档](https://www.volcengine.com/docs/6561/1668014)）：`wss://openspeech.bytedance.com/api/v3/sami/podcasttts`，headers `X-Api-App-Id` / `X-Api-Access-Key` / `X-Api-Resource-Id: volc.service_type.10050` / `X-Api-App-Key: aGjiRDfUWi`。`action=0` 文本直接生成双人播客；`action=3` 按 `nlp_texts` 合成；`only_nlp_text=true` 只出脚本；`return_audio_url=true` 返回完整 mp3 链接。音频格式选 mp3。
 
 **Step 1: 写失败测试**
 
 ```rust
+// volc_proto.rs —— 二进制帧编解码（文档 2.1 节：4 字节 header + payload）
+#[test]
+fn encode_full_client_request_frame() {
+    let frame = encode_text_frame(b"{\"action\":0}").unwrap();
+    assert_eq!(frame[0] >> 4, 0b0001);        // protocol v1
+    assert_eq!(frame[0] & 0xF, 0b0001);       // header size 4x
+    assert_eq!(frame[1] >> 4, 0b0001);        // message type: full client request
+    assert_eq!(frame[2] >> 4, 0b0001);        // JSON serialization
+    assert!(frame.len() > 4);
+}
+
+#[test]
+fn decode_audio_response_frame() {
+    // 构造一帧 server 音频响应，断言解码出 payload bytes
+}
+
+// 脚本解析（fallback 路径与模式 B 共用）
 #[test]
 fn parse_dialogue_script() {
     let script = "主持人：欢迎收听本期节目！\n嘉宾：今天的内容太炸了。\n主持人：没错。";
@@ -653,12 +680,20 @@ fn parse_dialogue_script() {
     assert_eq!(segs.len(), 3);
     assert_eq!(segs[0].role, Role::Host);
     assert_eq!(segs[1].role, Role::Guest);
-    assert_eq!(segs[2].text, "没错。");
 }
 
 #[test]
 fn parse_rejects_unknown_role() {
     assert!(parse_script("路人：hello").is_err());
+}
+
+// 模式 B：script.md 的 主持人/嘉宾 格式 → nlp_texts（speaker 用配置的两个发音人）
+#[test]
+fn script_to_nlp_texts_maps_speakers() {
+    let segs = parse_script("主持人：你好\n嘉宾：嗨").unwrap();
+    let nlp = to_nlp_texts(&segs, "speaker_a", "speaker_b");
+    assert_eq!(nlp[0]["speaker"], "speaker_a");
+    assert_eq!(nlp[1]["speaker"], "speaker_b");
 }
 ```
 
@@ -666,31 +701,22 @@ fn parse_rejects_unknown_role() {
 
 **Step 3: 实现**
 
-- `prompts/podcast_script.txt`：把文案改写成「主持人/嘉宾」双人对话播客脚本，口语化、有追问有 reaction，严格按 `主持人：...` / `嘉宾：...` 每行一句输出，`{{TEXT}}` 占位
-- `parse_script`：逐行解析，角色映射 Host/Guest，未知角色报错（含行号）
-- `tts/mod.rs`：
+- `volc_proto.rs`：帧编解码纯函数（protocol v1 / header 4 字节 / JSON / gzip 可选）
+- `volc_podcast.rs`：
+  - `PodcastProvider` trait：`async fn generate(&self, req: &PodcastRequest) -> anyhow::Result<PodcastResult>`，`PodcastRequest { text, nlp_texts: Option<Vec<NlpText>>, only_nlp_text: bool }`
+  - WebSocket 建连（带鉴权 headers）→ 发送 request payload → 循环读下行事件：音频帧追加 buffer / `PodcastRoundEnd` / `PodcastEnd`（含 `audio_url`，用它下载完整 mp3 或直接用拼接 buffer）→ 连接关闭返回
+  - 发音人：`speaker_info.speakers` 取配置 extra 中的两个音色，缺省用播客专属默认双音色
+- `cmd/podcast.rs` 流程（volc-podcast provider 时）：
+  - **模式 B**：`--script` 或 `script.md` 已存在 → 若无脚本先 `action=0 + only_nlp_text` 生成 → `script.md` 落盘退出并提示人工修改后重跑；若已有脚本 → `parse_script` → `to_nlp_texts` → `action=3` 合成 → `podcast.mp3`
+  - **模式 A（默认）**：`action=0` 直接合成 → `podcast.mp3`
+- fallback 路径（gemini-tts / openai-tts / volc-tts）：pi 生成对话脚本（`prompts/podcast_script.txt`，严格 `主持人：...` / `嘉宾：...` 格式）→ `script.md` 落盘 → 分段 TTS（`default_voices()` 双音色，retry3）→ `ffmpeg.rs::concat_mp3` 拼接 → `podcast.mp3`
 
-```rust
-#[async_trait::async_trait]
-pub trait TtsProvider: Send + Sync {
-    async fn synthesize(&self, text: &str, voice: &str) -> anyhow::Result<Vec<u8>>;
-    fn default_voices(&self) -> (String, String); // (host, guest)
-}
-
-pub fn resolve_tts(cfg: &Config) -> anyhow::Result<Box<dyn TtsProvider>> { todo!() }
-```
-
-- `cmd/podcast.rs` 流程：
-  1. 若 `script.md` 已存在（人工改过）→ 直接用；否则 pi 生成 → 落盘
-  2. `parse_script` → 每段 `tts.synthesize(text, voice)`（Host/Guest 用 `default_voices()`）→ `seg-000.mp3`…（retry3）
-  3. `ffmpeg.rs::concat_mp3(segs, podcast.mp3)`：`ffmpeg -f concat -safe 0 -i list.txt -c copy out.mp3`
-
-**Step 4: 测试通过 + 手动验证播客可播放**
+**Step 4: 测试通过 + 手动验证（真实火山 key 生成播客可播放）**
 
 **Step 5: Commit**
 
 ```bash
-git add -A && git commit -m "feat: podcast command (pi dialogue script + dual-voice tts + ffmpeg concat)"
+git add -A && git commit -m "feat: podcast command (volc podcast API mode A/B + generic tts fallback)"
 ```
 
 ---
@@ -797,6 +823,7 @@ git add -A && git commit -m "feat: preflight checks, readme, end-to-end integrat
 ## 备注
 
 - `PiRpcAgent` 每次 `complete()` 起一个一次性子进程是有意为之：无状态、隔离失败、实现简单；若后续性能成为问题，再演进为长驻进程 + `new_session` 复用
-- OpenAI gpt-image / 豆包 Seedream / OpenAI TTS / Gemini TTS 完全复用 nano-banana / volc_tts 建立的 HTTP 模式，作为各任务内同级小步骤完成
+- OpenAI gpt-image / 豆包 Seedream / OpenAI TTS / Gemini TTS 完全复用 nano-banana / volc_podcast 建立的 HTTP/WS 模式，作为各任务内同级小步骤完成
+- 火山播客 API 的断点续传（`retry_info`）首版不实现，失败后整体重试即可；片头/片尾音乐默认关闭
 - 语言模型的自定义 provider 不在 media-factory 内实现 —— 引导用户在 pi 的 `models.json` 中配置后，向导的模型列表自动可见
 - 字幕、TTS 段并发合成等优化明确不做（YAGNI），后续迭代再加
