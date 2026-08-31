@@ -136,6 +136,12 @@
     background: var(--ink-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; margin-bottom: 6px; font-size: 13px; }
   .custom-item .del { background: none; border: none; color: var(--err); cursor: pointer; font-size: 13px; }
   .hint { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .prov-row { display: flex; gap: 8px; }
+  .prov-row select { flex: 1; margin-bottom: 0; }
+  .custom-form { margin-top: 10px; background: var(--ink-2); border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
+  .custom-form .row { margin-bottom: 8px; }
+  .custom-form .row:last-of-type { margin-bottom: 10px; }
+  .prov-label { font-size: 12px; color: var(--cyanish, var(--cyan)); margin-bottom: 6px; font-family: var(--mono); }
 </style>
 </head>
 <body>
@@ -391,6 +397,8 @@ const PODCAST_BUILTINS = [
 ];
 let CFG = null; // 当前配置对象
 let CFG_MODELS = []; // pi 可用模型
+let PM_TASK = null; // 正在配置的 provider 所属任务
+let PM_KEY = null; // 正在配置的 provider key
 
 async function openConfig() {
   document.getElementById('cfgOverlay').classList.add('show');
@@ -415,8 +423,7 @@ function renderConfig() {
   const llm = document.getElementById('cfgLlm');
   llm.innerHTML = '<option value="">使用 pi 默认模型</option>';
   for (const m of CFG_MODELS) llm.innerHTML += `<option value="${m}">${m}</option>`;
-  const curLlm = CFG.tasks.llm?.model || '';
-  llm.value = curLlm;
+  llm.value = CFG.tasks.llm?.model || '';
 
   // 生图
   const img = document.getElementById('cfgImage');
@@ -424,20 +431,15 @@ function renderConfig() {
   img.innerHTML = '';
   for (const b of IMAGE_BUILTINS) img.innerHTML += `<option value="${b.key}">${b.label}</option>`;
   for (const c of customs) img.innerHTML += `<option value="${c}">${c}（自定义）</option>`;
-  const imgSel = CFG.tasks.image?.provider || 'nano-banana';
-  img.value = imgSel;
-  img.onchange = () => renderProviderFields();
+  img.value = CFG.tasks.image?.provider || 'nano-banana';
 
   // 播客
   const pod = document.getElementById('cfgPodcast');
   pod.innerHTML = '';
   for (const b of PODCAST_BUILTINS) pod.innerHTML += `<option value="${b.key}">${b.label}</option>`;
   for (const c of customs) pod.innerHTML += `<option value="${c}">${c}（自定义）</option>`;
-  const podSel = CFG.tasks.podcast?.provider || 'volc-podcast';
-  pod.value = podSel;
-  pod.onchange = () => renderProviderFields();
+  pod.value = CFG.tasks.podcast?.provider || 'volc-podcast';
 
-  renderProviderFields();
   renderCustoms();
 }
 
@@ -447,44 +449,73 @@ function maskKey(k) {
   return k.slice(0, 4) + '••••' + k.slice(-4);
 }
 
-function renderProviderFields() {
-  // 生图 key 输入（脱敏显示，不填新值则保留原值）
-  const imgSel = document.getElementById('cfgImage').value;
-  const imgKeyWrap = document.getElementById('imgKeyWrap');
-  const isImgBuiltin = IMAGE_BUILTINS.some(b => b.key === imgSel);
-  imgKeyWrap.style.display = isImgBuiltin ? 'block' : 'none';
-  if (isImgBuiltin) {
-    const p = CFG.providers[imgSel];
-    const key = p?.api_key || '';
-    const inp = document.getElementById('cfgImageKey');
-    inp.value = '';
-    inp.placeholder = key ? '已配置 ' + maskKey(key) + '（留空保持原值）' : 'API Key';
-  }
+function builtinMeta(key) {
+  return IMAGE_BUILTINS.find(x => x.key === key) || PODCAST_BUILTINS.find(x => x.key === key) || null;
+}
 
-  // 播客 key + appid
-  const podSel = document.getElementById('cfgPodcast').value;
-  const podKeyWrap = document.getElementById('podKeyWrap');
-  const podAppidWrap = document.getElementById('podAppidWrap');
-  const b = PODCAST_BUILTINS.find(x => x.key === podSel);
-  const isPodBuiltin = !!b;
-  podKeyWrap.style.display = isPodBuiltin ? 'block' : 'none';
-  podAppidWrap.style.display = (isPodBuiltin && b.extra?.includes('appid')) ? 'block' : 'none';
-  if (isPodBuiltin) {
-    const p = CFG.providers[podSel];
-    const key = p?.api_key || '';
-    const keyInp = document.getElementById('cfgPodcastKey');
-    keyInp.value = '';
-    keyInp.placeholder = key ? '已配置 ' + maskKey(key) + '（留空保持原值）' : 'Access Token / API Key';
-    // appid 非密钥，明文展示
-    document.getElementById('cfgPodcastAppid').value = p?.extra?.appid || '';
+function pmField(label, id, val, secret) {
+  const placeholder = (secret && val) ? '已配置 ' + maskKey(val) + '（留空保持原值）' : '';
+  const shown = secret ? '' : (val || '');
+  return `<div style="margin-bottom:10px"><label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">${label}</label><input type="text" id="${id}" placeholder="${placeholder}" value="${shown}"></div>`;
+}
+
+function openProviderModal(task) {
+  PM_TASK = task;
+  const selId = task === 'image' ? 'cfgImage' : 'cfgPodcast';
+  const key = document.getElementById(selId).value;
+  if (!key) return;
+  PM_KEY = key;
+  const p = CFG.providers[key];
+  document.getElementById('pmTitle').textContent = '配置 ' + key.replace(/-/g, ' ');
+
+  let html = '';
+  const meta = builtinMeta(key);
+  if (meta) {
+    html += pmField('API Key / Access Token', 'pmApiKey', p?.api_key || '', true);
+    for (const ek of (meta.extra || [])) {
+      html += pmField(ek.toUpperCase(), 'pm_' + ek, p?.extra?.[ek] || '', false);
+    }
+  } else {
+    html += pmField('BaseURL', 'pmBase', p?.base_url || '', false);
+    html += pmField('API Key', 'pmApiKey', p?.api_key || '', true);
+    html += pmField('模型名', 'pmModel', p?.model || '', false);
   }
+  document.getElementById('pmBody').innerHTML = html;
+  document.getElementById('providerOverlay').classList.add('show');
+}
+function closeProviderModal() { document.getElementById('providerOverlay').classList.remove('show'); }
+
+function saveProviderModal() {
+  const p = CFG.providers[PM_KEY] || {};
+  const meta = builtinMeta(PM_KEY);
+  const newKey = document.getElementById('pmApiKey')?.value?.trim() || '';
+  const key = newKey || p.api_key || '';
+  if (meta) {
+    const extra = { ...(p.extra || {}) };
+    for (const ek of (meta.extra || [])) {
+      const v = document.getElementById('pm_' + ek)?.value?.trim() || '';
+      if (v) extra[ek] = v;
+    }
+    CFG.providers[PM_KEY] = { type: 'builtin', kind: PM_KEY, api_key: key, extra };
+  } else {
+    const base = document.getElementById('pmBase')?.value?.trim() || p.base_url || '';
+    const model = document.getElementById('pmModel')?.value?.trim() || p.model || '';
+    CFG.providers[PM_KEY] = { type: 'openai-compatible', base_url: base, api_key: key, model };
+  }
+  closeProviderModal();
+  renderConfig();
+}
+
+function toggleCustomForm() {
+  const el = document.getElementById('customForm');
+  el.style.display = el.style.display === 'none' ? 'block' : 'none';
 }
 
 function renderCustoms() {
   const el = document.getElementById('cfgCustoms');
   el.innerHTML = '';
   const customs = customNames();
-  if (!customs.length) { el.innerHTML = '<div class="hint">暂无自定义 provider，可在下方添加</div>'; }
+  if (!customs.length) { el.innerHTML = '<div class="hint">暂无自定义 provider，点下方「+ 添加自定义 provider」新增</div>'; }
   for (const n of customs) {
     const p = CFG.providers[n];
     const d = document.createElement('div');
@@ -505,43 +536,16 @@ function addCustom() {
   const model = document.getElementById('cModel').value.trim();
   if (!name || !base || !model) { alert('名称 / BaseURL / 模型名 必填'); return; }
   CFG.providers[name] = { type: 'openai-compatible', base_url: base, api_key: key, model };
-  document.getElementById('cName').value = '';
-  document.getElementById('cBase').value = '';
-  document.getElementById('cKey').value = '';
-  document.getElementById('cModel').value = '';
+  ['cName','cBase','cKey','cModel'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('customForm').style.display = 'none';
   renderConfig();
 }
 
 async function saveConfig() {
-  // 汇总语言模型
   const llm = document.getElementById('cfgLlm').value;
   CFG.tasks.llm = llm ? { model: llm } : null;
-
-  // 生图
-  const imgSel = document.getElementById('cfgImage').value;
-  CFG.tasks.image = { provider: imgSel };
-  if (IMAGE_BUILTINS.some(b => b.key === imgSel)) {
-    const existing = CFG.providers[imgSel];
-    const newKey = document.getElementById('cfgImageKey').value.trim();
-    const key = newKey || existing?.api_key || '';
-    CFG.providers[imgSel] = { type: 'builtin', kind: imgSel, api_key: key, extra: existing?.extra || {} };
-  }
-
-  // 播客
-  const podSel = document.getElementById('cfgPodcast').value;
-  CFG.tasks.podcast = { provider: podSel };
-  const b = PODCAST_BUILTINS.find(x => x.key === podSel);
-  if (b) {
-    const existing = CFG.providers[podSel];
-    const newKey = document.getElementById('cfgPodcastKey').value.trim();
-    const key = newKey || existing?.api_key || '';
-    const extra = { ...(existing?.extra || {}) };
-    if (b.extra?.includes('appid')) {
-      const appidVal = document.getElementById('cfgPodcastAppid').value.trim();
-      if (appidVal) extra.appid = appidVal;
-    }
-    CFG.providers[podSel] = { type: 'builtin', kind: podSel, api_key: key, extra };
-  }
+  CFG.tasks.image = { provider: document.getElementById('cfgImage').value };
+  CFG.tasks.podcast = { provider: document.getElementById('cfgPodcast').value };
 
   const res = await fetch('/api/config', { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(CFG) });
   const data = await res.json();
@@ -563,33 +567,50 @@ async function saveConfig() {
         </section>
         <section>
           <h3>生图 provider</h3>
-          <select id="cfgImage"></select>
-          <div id="imgKeyWrap">
-            <input type="text" id="cfgImageKey" placeholder="API Key">
+          <div class="prov-row">
+            <select id="cfgImage"></select>
+            <button class="ghost" onclick="openProviderModal('image')">⚙ 配置</button>
           </div>
+          <div class="hint">选中模型后点「⚙ 配置」填写该模型所需的密钥；自定义 provider 直接选用。</div>
         </section>
         <section>
           <h3>播客 provider</h3>
-          <select id="cfgPodcast"></select>
-          <div id="podKeyWrap">
-            <input type="text" id="cfgPodcastKey" placeholder="Access Token / API Key">
+          <div class="prov-row">
+            <select id="cfgPodcast"></select>
+            <button class="ghost" onclick="openProviderModal('podcast')">⚙ 配置</button>
           </div>
-          <div id="podAppidWrap">
-            <input type="text" id="cfgPodcastAppid" placeholder="appid（火山需填）">
-          </div>
+          <div class="hint">选中模型后点「⚙ 配置」；火山类需填 appid。</div>
         </section>
         <section>
           <h3>自定义 provider（Other）</h3>
           <div id="cfgCustoms"></div>
-          <div class="row"><input type="text" id="cName" placeholder="名称"></div>
-          <div class="row"><input type="text" id="cBase" placeholder="BaseURL（https://…）"></div>
-          <div class="row"><input type="text" id="cKey" placeholder="API Key"><input type="text" id="cModel" placeholder="模型名"></div>
-          <button class="ghost" onclick="addCustom()">+ 添加自定义 provider</button>
+          <button class="ghost" onclick="toggleCustomForm()">+ 添加自定义 provider</button>
+          <div id="customForm" class="custom-form" style="display:none">
+            <div class="row"><input type="text" id="cName" placeholder="名称"></div>
+            <div class="row"><input type="text" id="cBase" placeholder="BaseURL（https://…）"></div>
+            <div class="row"><input type="text" id="cKey" placeholder="API Key"><input type="text" id="cModel" placeholder="模型名"></div>
+            <button onclick="addCustom()">添加</button>
+          </div>
         </section>
       </div>
       <div class="cfg-foot">
         <button class="ghost" onclick="closeConfig()">取消</button>
-        <button onclick="saveConfig()">保存配置</button>
+        <button onclick="saveConfig()">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 基座模型配置弹窗 -->
+  <div class="overlay" id="providerOverlay">
+    <div class="cfg-modal" style="width:440px">
+      <div class="cfg-head">
+        <span id="pmTitle">配置</span>
+        <button class="x" onclick="closeProviderModal()">×</button>
+      </div>
+      <div class="cfg-body" id="pmBody"></div>
+      <div class="cfg-foot">
+        <button class="ghost" onclick="closeProviderModal()">取消</button>
+        <button onclick="saveProviderModal()">保存</button>
       </div>
     </div>
   </div>
