@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Media Factory</title>
+<style>
+  :root { --bg:#0f1115; --panel:#181b22; --border:#2a2f3a; --text:#e6e8eb; --muted:#8b93a3; --accent:#4f8cff; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, "PingFang SC", "Hiragino Sans GB", sans-serif; line-height: 1.6; padding: 24px; }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 18px; }
+  .panel h2 { font-size: 15px; margin-bottom: 12px; }
+  textarea, input[type=text] { width: 100%; background: #0c0e12; border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 10px; font-size: 14px; font-family: inherit; }
+  textarea { min-height: 140px; resize: vertical; }
+  .field { margin-bottom: 12px; }
+  .field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  .btns { display: flex; flex-wrap: wrap; gap: 8px; }
+  button { background: var(--accent); color: #fff; border: none; border-radius: 6px; padding: 9px 16px; font-size: 14px; cursor: pointer; }
+  button:hover { filter: brightness(1.1); }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  button.ghost { background: transparent; border: 1px solid var(--border); color: var(--text); }
+  #status { margin-top: 14px; font-size: 13px; color: var(--muted); white-space: pre-wrap; }
+  #status.err { color: #ff6b6b; }
+  #status.ok { color: #4ade80; }
+  .result { margin-top: 12px; }
+  .result textarea { min-height: 80px; }
+  .artifacts { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px; }
+  .artifacts a { color: var(--accent); text-decoration: none; font-size: 13px; background: #0c0e12; border: 1px solid var(--border); padding: 6px 12px; border-radius: 6px; }
+  .artifacts a:hover { border-color: var(--accent); }
+  .task { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .task .links { display: flex; gap: 6px; flex-wrap: wrap; }
+  .task .links a { color: var(--accent); text-decoration: none; }
+  video, audio { width: 100%; margin-top: 10px; border-radius: 6px; }
+  img.preview { max-width: 100%; margin-top: 10px; border-radius: 6px; }
+</style>
+</head>
+<body>
+  <h1>Media Factory</h1>
+  <div class="sub">自媒体内容工厂：改写 → 生图 → 播客 → 视频（含字幕）</div>
+
+  <div class="grid">
+    <div class="panel">
+      <h2>输入</h2>
+      <div class="field">
+        <label>参考文案（必填）</label>
+        <textarea id="text" placeholder="粘贴需要改写的参考文案…"></textarea>
+      </div>
+      <div class="field">
+        <label>任务 ID（可选，留空自动生成；用于续跑）</label>
+        <input type="text" id="taskId" placeholder="如 20260830-171442">
+      </div>
+      <div class="field">
+        <label>参考图路径（可选，仅生图/全流程用，服务器上的文件路径）</label>
+        <input type="text" id="refImage" placeholder="如 /path/to/ref.png">
+      </div>
+      <div class="btns">
+        <button onclick="run('run')">🚀 一键全流程</button>
+        <button class="ghost" onclick="run('rewrite')">1. 改写</button>
+        <button class="ghost" onclick="run('image')">2. 生图</button>
+        <button class="ghost" onclick="run('podcast')">3. 播客</button>
+        <button class="ghost" onclick="run('video')">4. 视频</button>
+      </div>
+      <div id="status"></div>
+    </div>
+
+    <div class="panel">
+      <h2>结果</h2>
+      <div class="result">
+        <div id="rewritten"></div>
+        <div id="media"></div>
+        <div class="artifacts" id="artifacts"></div>
+      </div>
+      <h2 style="margin-top:18px">历史任务</h2>
+      <div id="tasks"></div>
+    </div>
+  </div>
+
+<script>
+async function run(step) {
+  const text = document.getElementById('text').value.trim();
+  const id = document.getElementById('taskId').value.trim() || null;
+  const refImage = document.getElementById('refImage').value.trim() || null;
+  const status = document.getElementById('status');
+  status.className = '';
+  status.textContent = '处理中…（视频合成含字幕需要较长时间，请耐心等待）';
+
+  const body = {};
+  if (step === 'run' || step === 'rewrite') body.text = text;
+  if (id) body.id = id;
+  if ((step === 'run' || step === 'image') && refImage) body.ref_image = refImage;
+  if (step === 'podcast') body.script = false;
+
+  try {
+    const res = await fetch('/api/' + step, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    if (data.ok) {
+      status.className = 'ok';
+      status.textContent = data.message || '完成';
+      if (data.id) document.getElementById('taskId').value = data.id;
+      renderResult(data);
+    } else {
+      status.className = 'err';
+      status.textContent = '错误：' + (data.error || '未知');
+    }
+  } catch (e) {
+    status.className = 'err';
+    status.textContent = '请求失败：' + e.message;
+  }
+}
+
+function renderResult(data) {
+  // 改写文案
+  const rw = document.getElementById('rewritten');
+  rw.innerHTML = '';
+  if (data.message && data.id && data.artifacts?.some(a => a.name === 'rewritten.md')) {
+    rw.innerHTML = '<div class="field"><label>改写文案</label><textarea>' + escapeHtml(data.message) + '</textarea></div>';
+  }
+  // 媒体预览
+  const media = document.getElementById('media');
+  media.innerHTML = '';
+  const id = data.id;
+  if (!id) return;
+  if (data.artifacts?.some(a => a.name === 'video.mp4')) {
+    media.innerHTML = '<video controls src="/api/files/' + id + '/video.mp4"></video>';
+  } else if (data.artifacts?.some(a => a.name === 'podcast.mp3')) {
+    media.innerHTML = '<audio controls src="/api/files/' + id + '/podcast.mp3"></audio>';
+  }
+  if (data.artifacts?.some(a => a.name === 'image.png')) {
+    media.innerHTML += '<img class="preview" src="/api/files/' + id + '/image.png">';
+  }
+  // 产物链接
+  const arts = document.getElementById('artifacts');
+  arts.innerHTML = '';
+  for (const a of (data.artifacts || [])) {
+    arts.innerHTML += '<a href="' + a.url + '" target="_blank">' + a.name + ' (' + fmtSize(a.size) + ')</a>';
+  }
+  loadTasks();
+}
+
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function fmtSize(n) {
+  if (n > 1048576) return (n/1048576).toFixed(1) + 'MB';
+  if (n > 1024) return (n/1024).toFixed(0) + 'KB';
+  return n + 'B';
+}
+
+async function loadTasks() {
+  const res = await fetch('/api/tasks');
+  const data = await res.json();
+  const el = document.getElementById('tasks');
+  el.innerHTML = '';
+  for (const t of (data.tasks || [])) {
+    let links = '';
+    for (const a of t.artifacts || []) {
+      links += '<a href="' + a.url + '" target="_blank">' + a.name + '</a>';
+    }
+    el.innerHTML += '<div class="task"><span>' + t.id + '</span><div class="links">' + links + '</div></div>';
+  }
+}
+loadTasks();
+</script>
+</body>
+</html>

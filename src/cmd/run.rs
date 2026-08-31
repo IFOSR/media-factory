@@ -9,7 +9,7 @@ use crate::provider;
 
 /// 串联执行全部四步：改写 → 生图 → 播客 → 视频。
 /// 任一步失败即停止，可用 `--id <id> <失败子命令>` 续跑。
-pub async fn run(input: Option<String>, id: Option<String>, reference: Option<String>) -> anyhow::Result<()> {
+pub async fn run(input: Option<String>, id: Option<String>, reference: Option<String>) -> anyhow::Result<String> {
     let cfg = Config::load(&Config::path())?;
     let llm = PiRpcAgent::new(cfg.tasks.llm.clone().map(|l| l.model))?;
     let source = rewrite::read_input(input)?;
@@ -32,7 +32,7 @@ pub async fn run_with_config(
     source: &str,
     id: Option<String>,
     reference: Option<PathBuf>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<String> {
     let id = rewrite::run_with(output_root, source, id, llm).await?;
     let dir = output_root.join(&id);
 
@@ -45,7 +45,7 @@ pub async fn run_with_config(
     video::run_with(&dir)?;
 
     println!("完成！产物目录: {}/{}/", output_root.display(), id);
-    Ok(())
+    Ok(id)
 }
 
 #[cfg(test)]

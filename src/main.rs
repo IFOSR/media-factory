@@ -7,6 +7,7 @@ mod llm;
 mod pi_rpc;
 mod podcast;
 mod provider;
+mod server;
 mod tts;
 mod wizard;
 
@@ -50,6 +51,12 @@ enum Commands {
         #[arg(long)] id: Option<String>,
         #[arg(long)] r#ref: Option<String>,
     },
+    /// 启动 Web 服务（功能与 CLI 一致）
+    Serve {
+        /// 监听端口
+        #[arg(long, default_value_t = 8092)]
+        port: u16,
+    },
 }
 
 fn require_pi() -> anyhow::Result<()> {
@@ -89,6 +96,9 @@ async fn main() -> anyhow::Result<()> {
         }
         Commands::Run { input, id, r#ref } => {
             cmd::run::run(input, id, r#ref).await?;
+        }
+        Commands::Serve { port } => {
+            server::run(port).await?;
         }
     }
     Ok(())
