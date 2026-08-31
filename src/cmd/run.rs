@@ -3,7 +3,6 @@ use std::path::{Path, PathBuf};
 use crate::cmd::{image, podcast, rewrite, video};
 use crate::config::Config;
 use crate::llm::LlmAgent;
-use crate::pi_rpc::PiRpcAgent;
 use crate::podcast as podcast_backend;
 use crate::provider;
 
@@ -25,7 +24,7 @@ pub async fn run(
     podcast_prompt: Option<String>,
 ) -> anyhow::Result<String> {
     let cfg = Config::load(&Config::path())?;
-    let llm = PiRpcAgent::new(cfg.tasks.llm.clone().map(|l| l.model))?;
+    let llm = crate::llm::resolve_llm(&cfg)?;
     let source = rewrite::read_input(input)?;
     let prompts = Prompts {
         rewrite: rewrite_prompt.as_deref(),
@@ -35,7 +34,7 @@ pub async fn run(
     run_with_config(
         Path::new("output"),
         &cfg,
-        &llm,
+        llm.as_ref(),
         &source,
         id,
         reference.map(PathBuf::from),
@@ -73,6 +72,7 @@ pub async fn run_with_config(
 mod tests {
     use super::*;
     use crate::config::{ProviderConfig, TaskSelection};
+    use crate::pi_rpc::PiRpcAgent;
 
     use base64::Engine as _;
 
@@ -113,9 +113,9 @@ done
     /// 构建全 mock 的 Config：image 与 podcast 都走 openai-compatible（wiremock）
     fn mock_config(image_base: String, tts_base: String) -> Config {
         let mut cfg = Config::default();
-        cfg.tasks.llm = Some(crate::config::LlmSelection {
-            model: "mock/model".into(),
-        });
+        cfg.tasks.llm = Some(crate::config::LlmSelection::Provider(TaskSelection {
+            provider: "pi".into(),
+        }));
         cfg.tasks.image = Some(TaskSelection {
             provider: "mock-img".into(),
         });

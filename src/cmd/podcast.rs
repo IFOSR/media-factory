@@ -3,7 +3,7 @@ use std::path::Path;
 use crate::config::Config;
 use crate::ffmpeg;
 use crate::llm::LlmAgent;
-use crate::pi_rpc::PiRpcAgent;
+
 use crate::podcast::{self, PodcastBackend, PodcastRequest, PodcastResult, VolcPodcast};
 use crate::tts::TtsProvider;
 
@@ -185,8 +185,8 @@ pub async fn run(
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_default();
     let cfg = Config::load(&Config::path())?;
-    let llm = PiRpcAgent::new(cfg.tasks.llm.clone().map(|l| l.model))?;
+    let llm = crate::llm::resolve_llm(&cfg)?;
     let backend = podcast::resolve_podcast(&cfg)?;
-    run_with(&dir, &llm, &backend, force_script, user_prompt.as_deref()).await?;
+    run_with(&dir, llm.as_ref(), &backend, force_script, user_prompt.as_deref()).await?;
     Ok(id)
 }

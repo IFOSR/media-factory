@@ -12,15 +12,34 @@ pub struct Config {
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct TaskSelections {
-    /// 语言模型选择（pi agent），存 "provider/model[:thinking]" 字符串；None = pi 默认模型
+    /// 语言模型 provider（与生图/播客同一套逻辑）：provider 指向 providers 里的 key
+    #[serde(default)]
     pub llm: Option<LlmSelection>,
     pub image: Option<TaskSelection>,
     pub podcast: Option<TaskSelection>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LlmSelection {
+#[serde(untagged)]
+pub enum LlmSelection {
+    /// 新格式：{ provider: "..." }（指向 providers 里的 key，如 pi / openai-compatible 自定义）
+    Provider(TaskSelection),
+    /// 旧格式：{ model: "..." }（pi 模型字符串），加载时迁移为 pi provider
+    Model(LlmModel),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LlmModel {
     pub model: String,
+}
+
+impl LlmSelection {
+    pub fn provider_key(&self) -> &str {
+        match self {
+            LlmSelection::Provider(t) => &t.provider,
+            LlmSelection::Model(_) => "pi",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -28,8 +47,7 @@ pub struct TaskSelection {
     pub provider: String,
 }
 
-/// 注意：语言模型（改写/脚本/图像 prompt）没有 ProviderConfig —— 由 pi 管理。
-/// 这里只为生图 / 播客任务配置 provider。
+/// 注意：生图 / 播客 / 语言模型（LLM）任务都通过 providers 里的 provider 配置。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum ProviderConfig {
@@ -38,7 +56,7 @@ pub enum ProviderConfig {
         kind: BuiltinKind,
         api_key: String,
         #[serde(default)]
-        extra: HashMap<String, String>, // volc-tts/volc-podcast 需要 appid/cluster 等
+        extra: HashMap<String, String>, // volc-tts/volc-podcast 需要 appid/cluster；pi 用 model
     },
     #[serde(rename = "openai-compatible")]
     Custom {
@@ -51,22 +69,24 @@ pub enum ProviderConfig {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum BuiltinKind {
-    NanoBanana,     // 生图（Gemini Image，支持参考图）
-    OpenAiImage,    // 生图（gpt-image）
-    DoubaoSeedream, // 生图
-    VolcPodcast,    // 播客大模型（推荐默认，端到端双人播客；extra 存 appid）
-    GeminiTts,      // 播客 TTS（fallback 路径）
-    OpenAiTts,      // 播客 TTS（fallback 路径）
-    VolcTts,        // 播客 TTS（fallback 路径；extra 存 appid/cluster）
+    Pi,              // 语言模型：pi agent（默认），extra.model 存 pi 模型字符串
+    NanoBanana,      // 生图（Gemini Image，支持参考图）
+    OpenAiImage,     // 生图（gpt-image）
+    DoubaoSeedream,  // 生图
+    VolcPodcast,     // 播客大模型（推荐默认，端到端双人播客；extra 存 appid）
+    GeminiTts,       // 播客 TTS（fallback 路径）
+    OpenAiTts,       // 播客 TTS（fallback 路径）
+    VolcTts,         // 播客 TTS（fallback 路径；extra 存 appid/cluster）
 }
 
 impl BuiltinKind {
-    pub fn supports(&self, task: MediaTaskKind) -> bool {
+    pub fn supports(&self, task: TaskKind) -> bool {
         use BuiltinKind::*;
-        use MediaTaskKind::*;
+        use TaskKind::*;
         matches!(
             (self, task),
-            (NanoBanana, Image)
+            (Pi, Llm)
+                | (NanoBanana, Image)
                 | (OpenAiImage, Image)
                 | (DoubaoSeedream, Image)
                 | (VolcPodcast, Podcast)
@@ -77,9 +97,11 @@ impl BuiltinKind {
     }
 }
 
-/// 需要直连 API 的媒体任务（语言模型任务不走这里）
+/// 任务类型：语言模型 / 生图 / 播客
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MediaTaskKind {
+#[allow(dead_code)]
+pub enum TaskKind {
+    Llm,
     Image,
     Podcast,
 }
@@ -96,7 +118,28 @@ impl Config {
         if !path.exists() {
             return Ok(Self::default());
         }
-        Ok(serde_yaml::from_str(&std::fs::read_to_string(path)?)?)
+        let mut cfg: Self = serde_yaml::from_str(&std::fs::read_to_string(path)?)?;
+        cfg.migrate_legacy_llm();
+        Ok(cfg)
+    }
+
+    /// 把旧的 { model: "..." } 迁移为 pi provider
+    fn migrate_legacy_llm(&mut self) {
+        if let Some(LlmSelection::Model(m)) = &self.tasks.llm {
+            let mut extra = HashMap::new();
+            extra.insert("model".to_string(), m.model.clone());
+            self.providers.insert(
+                "pi".to_string(),
+                ProviderConfig::Builtin {
+                    kind: BuiltinKind::Pi,
+                    api_key: String::new(),
+                    extra,
+                },
+            );
+            self.tasks.llm = Some(LlmSelection::Provider(TaskSelection {
+                provider: "pi".to_string(),
+            }));
+        }
     }
 
     pub fn save(&self, path: &Path) -> anyhow::Result<()> {
@@ -115,9 +158,9 @@ mod tests {
     #[test]
     fn config_roundtrip() {
         let mut cfg = Config::default();
-        cfg.tasks.llm = Some(LlmSelection {
-            model: "google/gemini-2.5-pro".into(),
-        });
+        cfg.tasks.llm = Some(LlmSelection::Provider(TaskSelection {
+            provider: "pi".into(),
+        }));
         cfg.tasks.image = Some(TaskSelection {
             provider: "nano-banana".into(),
         });
@@ -133,12 +176,26 @@ mod tests {
         let path = dir.path().join("config.yaml");
         cfg.save(&path).unwrap();
         let loaded = Config::load(&path).unwrap();
-        assert_eq!(
-            loaded.tasks.llm.unwrap().model,
-            "google/gemini-2.5-pro"
-        );
+        assert_eq!(loaded.tasks.llm.unwrap().provider_key(), "pi");
         match &loaded.providers["nano-banana"] {
             ProviderConfig::Builtin { api_key, .. } => assert_eq!(api_key, "k123"),
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    #[test]
+    fn legacy_llm_migrates_to_pi_provider() {
+        let yaml = "tasks:\n  llm:\n    model: google/gemini-2.5-pro\nproviders: {}\n";
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("c.yaml");
+        std::fs::write(&path, yaml).unwrap();
+        let cfg = Config::load(&path).unwrap();
+        assert_eq!(cfg.tasks.llm.unwrap().provider_key(), "pi");
+        match &cfg.providers["pi"] {
+            ProviderConfig::Builtin { kind, extra, .. } => {
+                assert_eq!(*kind, BuiltinKind::Pi);
+                assert_eq!(extra["model"], "google/gemini-2.5-pro");
+            }
             _ => panic!("wrong variant"),
         }
     }

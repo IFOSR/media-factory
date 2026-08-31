@@ -387,6 +387,10 @@ function renderTaskBody(box, t) {
 loadTasks();
 
 /* ===== 配置面板 ===== */
+const LLM_BUILTINS = [
+  { key: 'pi', label: 'pi（pi agent，默认）' },
+];
+
 const IMAGE_BUILTINS = [
   { key: 'nano-banana', label: 'nano-banana（官方 Gemini 生图）' },
   { key: 'openai-image', label: 'openai-image（gpt-image）' },
@@ -428,7 +432,9 @@ function labelFor(key) {
 }
 
 function renderConfig() {
-  document.getElementById('llmCurrent').textContent = CFG.tasks.llm?.model || 'pi 默认模型';
+  const llmKey = CFG.tasks.llm ? (CFG.tasks.llm.provider_key ? CFG.tasks.llm.provider_key() : (CFG.tasks.llm.provider || 'pi')) : 'pi';
+  const llmModel = CFG.providers[llmKey]?.extra?.model;
+  document.getElementById('llmCurrent').textContent = labelFor(llmKey) + (llmModel ? ' · ' + llmModel : '');
   document.getElementById('imageCurrent').textContent = labelFor(CFG.tasks.image?.provider);
   document.getElementById('podcastCurrent').textContent = labelFor(CFG.tasks.podcast?.provider);
   renderCustoms();
@@ -440,7 +446,7 @@ function maskKey(k) {
   return k.slice(0, 4) + '••••' + k.slice(-4);
 }
 function builtinMeta(key) {
-  return IMAGE_BUILTINS.find(x => x.key === key) || PODCAST_BUILTINS.find(x => x.key === key) || null;
+  return IMAGE_BUILTINS.find(x => x.key === key) || PODCAST_BUILTINS.find(x => x.key === key) || LLM_BUILTINS.find(x => x.key === key) || null;
 }
 
 function pmField(label, id, val, secret) {
@@ -449,36 +455,24 @@ function pmField(label, id, val, secret) {
   return `<div style="margin-bottom:10px"><label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">${label}</label><input type="text" id="${id}" placeholder="${placeholder}" value="${shown}"></div>`;
 }
 
-// 打开配置弹窗：llm / image / podcast
+// 打开配置弹窗：llm / image / podcast（统一：provider 下拉 + 配置字段）
 function openProviderModal(kind) {
   PM_KIND = kind;
   const title = kind === 'llm' ? '语言模型' : (kind === 'image' ? '生图 provider' : '播客 provider');
   document.getElementById('pmTitle').textContent = '配置 ' + title;
-  let html = '';
 
-  if (kind === 'llm') {
-    html = '<label style="font-size:12px;color:var(--muted);display:block;margin-bottom:6px">选择 pi 模型</label>'
-      + '<select id="pmLlm"><option value="">使用 pi 默认模型</option>';
-    for (const m of CFG_MODELS) html += `<option value="${m}">${m}</option>`;
-    html += '</select><div class="hint" style="margin-top:8px">由 pi 管理认证；留空用默认。</div>';
-    document.getElementById('pmBody').innerHTML = html;
-    document.getElementById('pmLlm').value = CFG.tasks.llm?.model || '';
-  } else {
-    // 选择 provider 的下拉
-    const isImage = kind === 'image';
-    const builtins = isImage ? IMAGE_BUILTINS : PODCAST_BUILTINS;
-    const customs = customNames();
-    const cur = CFG.tasks[kind]?.provider;
-    let sel = '<label style="font-size:12px;color:var(--muted);display:block;margin-bottom:6px">选用 provider</label>'
-      + `<select id="pmProvider" onchange="renderProviderFields()">`;
-    for (const b of builtins) sel += `<option value="${b.key}">${b.label}</option>`;
-    for (const c of customs) sel += `<option value="${c}">${c}（自定义）</option>`;
-    sel += '</select>';
-    html = sel + '<div id="pmFields" style="margin-top:12px"></div>';
-    document.getElementById('pmBody').innerHTML = html;
-    document.getElementById('pmProvider').value = cur && (builtins.some(b => b.key === cur) || customs.includes(cur)) ? cur : builtins[0].key;
-    renderProviderFields();
-  }
+  const builtins = kind === 'llm' ? LLM_BUILTINS : (kind === 'image' ? IMAGE_BUILTINS : PODCAST_BUILTINS);
+  const customs = customNames();
+  const cur = kind === 'llm' ? (CFG.tasks.llm ? CFG.tasks.llm.provider_key() : 'pi') : (CFG.tasks[kind]?.provider || builtins[0].key);
+  let sel = '<label style="font-size:12px;color:var(--muted);display:block;margin-bottom:6px">选用 provider</label>'
+    + `<select id="pmProvider" onchange="renderProviderFields()">`;
+  for (const b of builtins) sel += `<option value="${b.key}">${b.label}</option>`;
+  for (const c of customs) sel += `<option value="${c}">${c}（自定义）</option>`;
+  sel += '</select>';
+  document.getElementById('pmBody').innerHTML = sel + '<div id="pmFields" style="margin-top:12px"></div>';
+  const keep = cur && (builtins.some(b => b.key === cur) || customs.includes(cur)) ? cur : builtins[0].key;
+  document.getElementById('pmProvider').value = keep;
+  renderProviderFields();
   document.getElementById('providerOverlay').classList.add('show');
 }
 
@@ -488,6 +482,17 @@ function renderProviderFields() {
   PM_PROVIDER = key;
   const p = CFG.providers[key];
   let html = '';
+  if (key === 'pi') {
+    // pi 语言模型：模型来自 pi 的可用模型，无独立密钥（pi 管理认证）
+    const cur = p?.extra?.model || '';
+    let opts = '<option value="">使用 pi 默认模型</option>';
+    for (const m of CFG_MODELS) opts += `<option value="${m}">${m}</option>`;
+    html = `<div style="margin-bottom:10px"><label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">pi 模型</label>`
+      + `<select id="pmModel">${opts}</select></div><div class="hint">由 pi 管理认证；留空用默认模型。</div>`;
+    document.getElementById('pmFields').innerHTML = html;
+    document.getElementById('pmModel').value = cur;
+    return;
+  }
   const meta = builtinMeta(key);
   if (meta) {
     html += pmField('API Key / Access Token', 'pmApiKey', p?.api_key || '', true);
@@ -499,7 +504,6 @@ function renderProviderFields() {
     html += pmField('API Key', 'pmApiKey', p?.api_key || '', true);
     html += `<div style="margin-bottom:10px"><label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">模型</label>`
       + `<div class="row"><button class="ghost" onclick="fetchModelsTo('pmModel')">获取模型</button><select id="pmModel"></select></div></div>`;
-    // 预填已有的模型
     setTimeout(() => { const s = document.getElementById('pmModel'); s.innerHTML = `<option value="${p?.model||''}">${p?.model||'— 点击「获取模型」拉取 —'}</option>`; }, 0);
   }
   document.getElementById('pmFields').innerHTML = html;
@@ -515,8 +519,20 @@ async function fetchModelsTo(selId) {
 
 function saveProviderModal() {
   if (PM_KIND === 'llm') {
-    const m = document.getElementById('pmLlm').value;
-    CFG.tasks.llm = m ? { model: m } : null;
+    const provider = document.getElementById('pmProvider').value;
+    CFG.tasks.llm = { provider };
+    if (provider === 'pi') {
+      const model = document.getElementById('pmModel').value || '';
+      const extra = { ...(CFG.providers['pi']?.extra || {}) };
+      if (model) extra.model = model;
+      CFG.providers['pi'] = { type: 'builtin', kind: 'pi', api_key: '', extra };
+    } else {
+      const p = CFG.providers[provider] || {};
+      const base = document.getElementById('pmBase')?.value?.trim() || p.base_url || '';
+      const key = document.getElementById('pmApiKey')?.value?.trim() || p.api_key || '';
+      const model = document.getElementById('pmModel')?.value || p.model || '';
+      CFG.providers[provider] = { type: 'openai-compatible', base_url: base, api_key: key, model };
+    }
   } else {
     const provider = document.getElementById('pmProvider').value;
     CFG.tasks[PM_KIND] = { provider };

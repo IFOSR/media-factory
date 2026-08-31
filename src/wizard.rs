@@ -2,11 +2,11 @@ use std::collections::HashMap;
 
 use dialoguer::{Confirm, Input, Password, Select};
 
-use crate::config::{BuiltinKind, Config, MediaTaskKind, ProviderConfig, TaskSelection};
+use crate::config::{BuiltinKind, Config, ProviderConfig, TaskKind, TaskSelection};
 use crate::pi_rpc;
 
 /// 该媒体任务可用的内置 provider 列表
-pub fn builtin_for_task(task: MediaTaskKind) -> Vec<BuiltinKind> {
+pub fn builtin_for_task(task: TaskKind) -> Vec<BuiltinKind> {
     [
         BuiltinKind::NanoBanana,
         BuiltinKind::OpenAiImage,
@@ -68,6 +68,7 @@ fn builtin_display_name(kind: BuiltinKind) -> &'static str {
         BuiltinKind::GeminiTts => "gemini-tts（通用 TTS）",
         BuiltinKind::OpenAiTts => "openai-tts（通用 TTS）",
         BuiltinKind::VolcTts => "volc-tts（火山豆包语音）",
+        BuiltinKind::Pi => "pi（pi agent 语言模型，默认）",
     }
 }
 
@@ -81,6 +82,7 @@ fn builtin_id(kind: BuiltinKind) -> &'static str {
         BuiltinKind::GeminiTts => "gemini-tts",
         BuiltinKind::OpenAiTts => "openai-tts",
         BuiltinKind::VolcTts => "volc-tts",
+        BuiltinKind::Pi => "pi",
     }
 }
 
@@ -111,8 +113,8 @@ pub async fn run() -> anyhow::Result<()> {
             .interact()?;
         match sel {
             0 => bind_llm(&mut cfg).await?,
-            1 => bind_media(&mut cfg, MediaTaskKind::Image)?,
-            2 => bind_media(&mut cfg, MediaTaskKind::Podcast)?,
+            1 => bind_media(&mut cfg, TaskKind::Image)?,
+            2 => bind_media(&mut cfg, TaskKind::Podcast)?,
             3 => {
                 let name = add_custom(&mut cfg)?;
                 println!("已创建自定义 provider「{name}」，可在「生图」/「播客」中绑定");
@@ -165,14 +167,26 @@ async fn bind_llm(cfg: &mut Config) -> anyhow::Result<()> {
     cfg.tasks.llm = if sel == 1 {
         None
     } else {
-        Some(crate::config::LlmSelection {
-            model: models[sel - 2].clone(),
-        })
+        // 把选择的 pi 模型写入内置 pi provider 的 extra.model
+        let model = models[sel - 2].clone();
+        let mut extra = std::collections::HashMap::new();
+        extra.insert("model".to_string(), model);
+        cfg.providers.insert(
+            "pi".to_string(),
+            ProviderConfig::Builtin {
+                kind: BuiltinKind::Pi,
+                api_key: String::new(),
+                extra,
+            },
+        );
+        Some(crate::config::LlmSelection::Provider(TaskSelection {
+            provider: "pi".to_string(),
+        }))
     };
     Ok(())
 }
 
-fn bind_media(cfg: &mut Config, task: MediaTaskKind) -> anyhow::Result<()> {
+fn bind_media(cfg: &mut Config, task: TaskKind) -> anyhow::Result<()> {
     let builtins = builtin_for_task(task);
 
     // 菜单：返回上一步 + 内置 provider + 已有自定义 + Other（新增）
@@ -198,8 +212,9 @@ fn bind_media(cfg: &mut Config, task: MediaTaskKind) -> anyhow::Result<()> {
 
     let sel = Select::new()
         .with_prompt(match task {
-            MediaTaskKind::Image => "选择生图 provider",
-            MediaTaskKind::Podcast => "选择播客 provider",
+            TaskKind::Image => "选择生图 provider",
+            TaskKind::Podcast => "选择播客 provider",
+            TaskKind::Llm => "选择语言模型 provider",
         })
         .items(&labels)
         .default(0)
@@ -213,8 +228,9 @@ fn bind_media(cfg: &mut Config, task: MediaTaskKind) -> anyhow::Result<()> {
         let name = add_custom(cfg)?;
         let provider = TaskSelection { provider: name };
         match task {
-            MediaTaskKind::Image => cfg.tasks.image = Some(provider),
-            MediaTaskKind::Podcast => cfg.tasks.podcast = Some(provider),
+            TaskKind::Image => cfg.tasks.image = Some(provider),
+            TaskKind::Podcast => cfg.tasks.podcast = Some(provider),
+            TaskKind::Llm => cfg.tasks.llm = Some(crate::config::LlmSelection::Provider(provider)),
         }
         return Ok(());
     }
@@ -247,15 +263,17 @@ fn bind_media(cfg: &mut Config, task: MediaTaskKind) -> anyhow::Result<()> {
         }
         let selection = TaskSelection { provider: id };
         match task {
-            MediaTaskKind::Image => cfg.tasks.image = Some(selection),
-            MediaTaskKind::Podcast => cfg.tasks.podcast = Some(selection),
+            TaskKind::Image => cfg.tasks.image = Some(selection),
+            TaskKind::Podcast => cfg.tasks.podcast = Some(selection),
+            TaskKind::Llm => cfg.tasks.llm = Some(crate::config::LlmSelection::Provider(selection)),
         }
     } else {
         let name = custom_names[sel - 1 - builtins.len()].clone();
         let provider = TaskSelection { provider: name };
         match task {
-            MediaTaskKind::Image => cfg.tasks.image = Some(provider),
-            MediaTaskKind::Podcast => cfg.tasks.podcast = Some(provider),
+            TaskKind::Image => cfg.tasks.image = Some(provider),
+            TaskKind::Podcast => cfg.tasks.podcast = Some(provider),
+            TaskKind::Llm => cfg.tasks.llm = Some(crate::config::LlmSelection::Provider(provider)),
         }
     }
     Ok(())
@@ -297,10 +315,10 @@ mod tests {
 
     #[test]
     fn builtin_lists_match_tasks() {
-        assert_eq!(builtin_for_task(MediaTaskKind::Image).len(), 3);
-        assert_eq!(builtin_for_task(MediaTaskKind::Podcast).len(), 4);
-        assert!(builtin_for_task(MediaTaskKind::Podcast).contains(&BuiltinKind::VolcPodcast));
-        assert!(!builtin_for_task(MediaTaskKind::Image).contains(&BuiltinKind::VolcPodcast));
+        assert_eq!(builtin_for_task(TaskKind::Image).len(), 3);
+        assert_eq!(builtin_for_task(TaskKind::Podcast).len(), 4);
+        assert!(builtin_for_task(TaskKind::Podcast).contains(&BuiltinKind::VolcPodcast));
+        assert!(!builtin_for_task(TaskKind::Image).contains(&BuiltinKind::VolcPodcast));
     }
 
     #[test]

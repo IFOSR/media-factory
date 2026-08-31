@@ -3,7 +3,6 @@ use std::path::Path;
 
 use crate::config::Config;
 use crate::llm::LlmAgent;
-use crate::pi_rpc::PiRpcAgent;
 
 /// 读取改写 prompt 模板：优先运行时读 cwd/prompts/rewrite.txt（用户可改），
 /// 缺失时用编译期嵌入的默认模板。
@@ -52,12 +51,12 @@ pub async fn run_with(
     Ok(id)
 }
 
-/// 公开入口：读输入（文件/stdin）→ 加载配置 → PiRpcAgent → run_with
+/// 公开入口：读输入（文件/stdin）→ 加载配置 → 解析 LLM provider → run_with
 pub async fn run(input: Option<String>, id: Option<String>, user_prompt: Option<String>) -> anyhow::Result<String> {
     let source = read_input(input)?;
     let cfg = Config::load(&Config::path())?;
-    let llm = PiRpcAgent::new(cfg.tasks.llm.map(|l| l.model))?;
-    run_with(Path::new("output"), &source, id, &llm, user_prompt.as_deref()).await
+    let llm = crate::llm::resolve_llm(&cfg)?;
+    run_with(Path::new("output"), &source, id, llm.as_ref(), user_prompt.as_deref()).await
 }
 
 pub(crate) fn read_input(input: Option<String>) -> anyhow::Result<String> {

@@ -15,7 +15,7 @@ use tokio::sync::Mutex;
 
 use crate::cmd;
 use crate::config::Config;
-use crate::pi_rpc::{self, PiRpcAgent};
+use crate::pi_rpc;
 use crate::podcast as podcast_backend;
 use crate::provider;
 use crate::wizard;
@@ -107,10 +107,10 @@ fn err(e: anyhow::Error) -> ApiResp {
     ApiResp { ok: false, id: None, message: None, error: Some(e.to_string()), artifacts: None }
 }
 
-/// 加载配置 + pi 客户端
-fn load_ctx() -> anyhow::Result<(Config, PiRpcAgent)> {
+/// 加载配置 + 解析 LLM provider
+fn load_ctx() -> anyhow::Result<(Config, Box<dyn crate::llm::LlmAgent>)> {
     let cfg = Config::load(&Config::path())?;
-    let llm = PiRpcAgent::new(cfg.tasks.llm.clone().map(|l| l.model))?;
+    let llm = crate::llm::resolve_llm(&cfg)?;
     Ok((cfg, llm))
 }
 
@@ -164,7 +164,7 @@ async fn run_pipeline_inner(req: RunReq) -> anyhow::Result<ApiResp> {
     let id = cmd::run::run_with_config(
         Path::new(OUTPUT_ROOT),
         &cfg,
-        &llm,
+        llm.as_ref(),
         &req.text,
         req.id,
         req.ref_image.map(PathBuf::from),
@@ -177,7 +177,7 @@ async fn run_pipeline_inner(req: RunReq) -> anyhow::Result<ApiResp> {
 async fn rewrite(Json(req): Json<RewriteReq>) -> Response {
     let result = async {
         let (_cfg, llm) = load_ctx()?;
-        let id = cmd::rewrite::run_with(Path::new(OUTPUT_ROOT), &req.text, req.id, &llm, req.prompt.as_deref()).await?;
+        let id = cmd::rewrite::run_with(Path::new(OUTPUT_ROOT), &req.text, req.id, llm.as_ref(), req.prompt.as_deref()).await?;
         let rewritten = std::fs::read_to_string(Path::new(OUTPUT_ROOT).join(&id).join("rewritten.md")).unwrap_or_default();
         Ok(ok(Some(id.clone()), Some(rewritten), Some(list_artifacts(&id))))
     }
@@ -193,7 +193,7 @@ async fn image(Json(req): Json<ImageReq>) -> Response {
         let (cfg, llm) = load_ctx()?;
         let dir = resolve_dir(req.id)?;
         let provider = provider::resolve_image(&cfg)?;
-        cmd::image::run_with(&dir, req.ref_image.map(PathBuf::from), &llm, provider.as_ref(), req.prompt.as_deref()).await?;
+        cmd::image::run_with(&dir, req.ref_image.map(PathBuf::from), llm.as_ref(), provider.as_ref(), req.prompt.as_deref()).await?;
         let id = dir_id(&dir);
         Ok(ok(Some(id.clone()), Some("生图完成".into()), Some(list_artifacts(&id))))
     }
@@ -209,7 +209,7 @@ async fn podcast(Json(req): Json<PodcastReq>) -> Response {
         let (cfg, llm) = load_ctx()?;
         let dir = resolve_dir(req.id)?;
         let backend = podcast_backend::resolve_podcast(&cfg)?;
-        cmd::podcast::run_with(&dir, &llm, &backend, req.script, req.prompt.as_deref()).await?;
+        cmd::podcast::run_with(&dir, llm.as_ref(), &backend, req.script, req.prompt.as_deref()).await?;
         let id = dir_id(&dir);
         Ok(ok(Some(id.clone()), Some("播客完成".into()), Some(list_artifacts(&id))))
     }

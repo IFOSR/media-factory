@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use crate::config::Config;
 use crate::llm::LlmAgent;
-use crate::pi_rpc::PiRpcAgent;
+
 use crate::provider::{self, ImageProvider, ImageRequest};
 
 /// 读取图像 prompt 模板：优先运行时读 cwd/prompts/image_prompt.txt，缺失用嵌入默认。
@@ -85,8 +85,8 @@ pub async fn run(
         .unwrap_or_default();
     let reference = reference.map(PathBuf::from);
     let cfg = Config::load(&Config::path())?;
-    let llm = PiRpcAgent::new(cfg.tasks.llm.clone().map(|l| l.model))?;
+    let llm = crate::llm::resolve_llm(&cfg)?;
     let provider = provider::resolve_image(&cfg)?;
-    run_with(&dir, reference, &llm, provider.as_ref(), user_prompt.as_deref()).await?;
+    run_with(&dir, reference, llm.as_ref(), provider.as_ref(), user_prompt.as_deref()).await?;
     Ok(id)
 }
