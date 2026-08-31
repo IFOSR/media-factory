@@ -3,156 +3,290 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Media Factory</title>
+<title>Media Factory · 内容工厂</title>
 <style>
-  :root { --bg:#0f1115; --panel:#181b22; --border:#2a2f3a; --text:#e6e8eb; --muted:#8b93a3; --accent:#4f8cff; }
+  :root {
+    --ink: #14161d;         /* 深墨蓝底 */
+    --ink-2: #1b1e27;
+    --panel: #1e212b;
+    --line: #2c303c;
+    --text: #e8e6e1;        /* 暖白 */
+    --muted: #8a8f9e;
+    --amber: #e8a33d;       /* 主色：摄影棚暖光 */
+    --amber-soft: rgba(232,163,61,.14);
+    --cyan: #4aa8c0;        /* 副色：音频电平 */
+    --ok: #67b87d;
+    --err: #e0655a;
+    --mono: "SF Mono", "JetBrains Mono", "Menlo", monospace;
+    --sans: -apple-system, "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", sans-serif;
+  }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: var(--bg); color: var(--text); font-family: -apple-system, "PingFang SC", "Hiragino Sans GB", sans-serif; line-height: 1.6; padding: 24px; }
-  h1 { font-size: 20px; margin-bottom: 4px; }
-  .sub { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
-  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
-  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 18px; }
-  .panel h2 { font-size: 15px; margin-bottom: 12px; }
-  textarea, input[type=text] { width: 100%; background: #0c0e12; border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 10px; font-size: 14px; font-family: inherit; }
-  textarea { min-height: 140px; resize: vertical; }
-  .field { margin-bottom: 12px; }
-  .field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
-  .btns { display: flex; flex-wrap: wrap; gap: 8px; }
-  button { background: var(--accent); color: #fff; border: none; border-radius: 6px; padding: 9px 16px; font-size: 14px; cursor: pointer; }
-  button:hover { filter: brightness(1.1); }
-  button:disabled { opacity: .5; cursor: not-allowed; }
-  button.ghost { background: transparent; border: 1px solid var(--border); color: var(--text); }
-  #status { margin-top: 14px; font-size: 13px; color: var(--muted); white-space: pre-wrap; }
-  #status.err { color: #ff6b6b; }
-  #status.ok { color: #4ade80; }
-  .result { margin-top: 12px; }
-  .result textarea { min-height: 80px; }
-  .artifacts { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px; }
-  .artifacts a { color: var(--accent); text-decoration: none; font-size: 13px; background: #0c0e12; border: 1px solid var(--border); padding: 6px 12px; border-radius: 6px; }
-  .artifacts a:hover { border-color: var(--accent); }
-  .task { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
-  .task .links { display: flex; gap: 6px; flex-wrap: wrap; }
-  .task .links a { color: var(--accent); text-decoration: none; }
-  video, audio { width: 100%; margin-top: 10px; border-radius: 6px; }
-  img.preview { max-width: 100%; margin-top: 10px; border-radius: 6px; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--ink); color: var(--text);
+    font-family: var(--sans); line-height: 1.6;
+    padding: 28px 32px 60px; min-height: 100vh;
+  }
+  .topbar { display: flex; align-items: baseline; gap: 14px; margin-bottom: 22px; }
+  .topbar h1 { font-size: 22px; letter-spacing: .5px; font-weight: 650; }
+  .topbar .brand { color: var(--amber); font-family: var(--mono); font-size: 22px; }
+  .topbar .sub { color: var(--muted); font-size: 13px; }
+
+  /* 生产线 —— 签名元素 */
+  .line { display: flex; align-items: stretch; gap: 0; margin-bottom: 26px; }
+  .station { flex: 1; position: relative; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; padding: 13px 14px; cursor: pointer; transition: border-color .2s, transform .15s; }
+  .station + .station { margin-left: 10px; }
+  .station:hover { border-color: var(--amber); transform: translateY(-1px); }
+  .station.done { border-color: rgba(232,163,61,.5); }
+  .station .num { font-family: var(--mono); font-size: 11px; color: var(--amber); letter-spacing: 1px; }
+  .station .name { font-size: 14px; margin-top: 2px; font-weight: 600; }
+  .station .desc { font-size: 11px; color: var(--muted); margin-top: 1px; }
+  .station .dot { position: absolute; top: 13px; right: 14px; width: 7px; height: 7px; border-radius: 50%;
+    background: var(--line); transition: background .3s; }
+  .station.done .dot { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
+
+  .grid { display: grid; grid-template-columns: 400px 1fr; gap: 22px; align-items: start; }
+  @media (max-width: 980px) { .grid { grid-template-columns: 1fr; } }
+
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px; }
+  .panel h2 { font-size: 14px; margin-bottom: 14px; font-weight: 600; letter-spacing: .3px; }
+  .panel h2::before { content: "// "; color: var(--amber); font-family: var(--mono); }
+
+  .field { margin-bottom: 14px; }
+  .field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 5px; }
+  textarea, input[type=text] {
+    width: 100%; background: var(--ink-2); border: 1px solid var(--line);
+    border-radius: 8px; color: var(--text); padding: 11px 12px; font-size: 14px; font-family: inherit;
+    transition: border-color .2s;
+  }
+  textarea:focus, input:focus { outline: none; border-color: var(--amber); }
+  textarea { min-height: 150px; resize: vertical; }
+
+  .drop { border: 1.5px dashed var(--line); border-radius: 8px; padding: 14px; text-align: center;
+    font-size: 13px; color: var(--muted); cursor: pointer; transition: all .2s; }
+  .drop:hover, .drop.on { border-color: var(--amber); color: var(--text); background: var(--amber-soft); }
+  .drop.has { color: var(--ok); border-color: var(--ok); }
+
+  .btns { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+  button {
+    background: var(--amber); color: #1a1408; border: none; border-radius: 8px;
+    padding: 10px 18px; font-size: 14px; font-weight: 600; cursor: pointer; transition: filter .15s, transform .1s;
+  }
+  button:hover { filter: brightness(1.08); }
+  button:active { transform: translateY(1px); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.ghost { background: transparent; border: 1px solid var(--line); color: var(--text); font-weight: 500; }
+
+  #status { margin-top: 14px; font-size: 13px; color: var(--muted); white-space: pre-wrap; min-height: 20px; }
+  #status.ok { color: var(--ok); }
+  #status.err { color: var(--err); }
+  .spin { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--line);
+    border-top-color: var(--amber); border-radius: 50%; animation: r .8s linear infinite; vertical-align: -1px; margin-right: 6px; }
+  @keyframes r { to { transform: rotate(360deg); } }
+
+  /* 结果区 */
+  .artifact { border-top: 1px solid var(--line); padding: 14px 0; }
+  .artifact:first-child { border-top: none; padding-top: 0; }
+  .artifact .cap { font-family: var(--mono); font-size: 11px; color: var(--cyan); letter-spacing: .5px; margin-bottom: 8px; }
+  .artifact textarea, .artifact pre { width: 100%; background: var(--ink-2); border: 1px solid var(--line);
+    border-radius: 8px; color: var(--text); padding: 12px; font-size: 13px; white-space: pre-wrap; max-height: 360px; overflow: auto; }
+  video, audio { width: 100%; border-radius: 8px; outline: none; }
+  img.prev { max-width: 100%; border-radius: 8px; display: block; }
+
+  /* 任务列表 */
+  .task { border: 1px solid var(--line); border-radius: 10px; margin-bottom: 10px; overflow: hidden; }
+  .task-head { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 12px 14px; cursor: pointer; transition: background .15s; }
+  .task-head:hover { background: var(--ink-2); }
+  .task-head .tid { font-family: var(--mono); font-size: 13px; color: var(--text); }
+  .task-head .meta { font-size: 11px; color: var(--muted); }
+  .task-head .chev { color: var(--muted); transition: transform .2s; font-size: 12px; }
+  .task.open .chev { transform: rotate(90deg); }
+  .task-body { display: none; padding: 4px 14px 14px; border-top: 1px solid var(--line); background: var(--ink-2); }
+  .task.open .task-body { display: block; }
+  .task-body .mini-links { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+  .task-body .mini-links a { color: var(--cyan); text-decoration: none; font-size: 12px; font-family: var(--mono); }
+  .task-body .mini-links a:hover { text-decoration: underline; }
+  .empty { color: var(--muted); font-size: 13px; text-align: center; padding: 20px 0; }
 </style>
 </head>
 <body>
-  <h1>Media Factory</h1>
-  <div class="sub">自媒体内容工厂：改写 → 生图 → 播客 → 视频（含字幕）</div>
+  <div class="topbar">
+    <span class="brand">▮▮</span>
+    <h1>Media Factory</h1>
+    <span class="sub">自媒体内容生产线：改写 · 生图 · 播客 · 视频（含字幕）</span>
+  </div>
+
+  <div class="line">
+    <div class="station" data-step="rewrite" onclick="run('rewrite')">
+      <span class="num">STEP 01</span><span class="dot"></span>
+      <div class="name">改写</div><div class="desc">爆款文案</div>
+    </div>
+    <div class="station" data-step="image" onclick="run('image')">
+      <span class="num">STEP 02</span><span class="dot"></span>
+      <div class="name">生图</div><div class="desc">核心意象配图</div>
+    </div>
+    <div class="station" data-step="podcast" onclick="run('podcast')">
+      <span class="num">STEP 03</span><span class="dot"></span>
+      <div class="name">播客</div><div class="desc">双人对话音频</div>
+    </div>
+    <div class="station" data-step="video" onclick="run('video')">
+      <span class="num">STEP 04</span><span class="dot"></span>
+      <div class="name">视频</div><div class="desc">图片 + 音频 + 字幕</div>
+    </div>
+  </div>
 
   <div class="grid">
     <div class="panel">
-      <h2>输入</h2>
+      <h2>投料</h2>
       <div class="field">
         <label>参考文案（必填）</label>
-        <textarea id="text" placeholder="粘贴需要改写的参考文案…"></textarea>
+        <textarea id="text" placeholder="粘贴要改写的参考文案…"></textarea>
       </div>
       <div class="field">
-        <label>任务 ID（可选，留空自动生成；用于续跑）</label>
+        <label>参考图（可选，作为生图参考）</label>
+        <div class="drop" id="drop">点击或拖拽图片到这里上传</div>
+        <input type="file" id="file" accept="image/*" hidden>
+      </div>
+      <div class="field">
+        <label>任务 ID（可选，留空自动生成；续跑时填已有任务）</label>
         <input type="text" id="taskId" placeholder="如 20260830-171442">
       </div>
-      <div class="field">
-        <label>参考图路径（可选，仅生图/全流程用，服务器上的文件路径）</label>
-        <input type="text" id="refImage" placeholder="如 /path/to/ref.png">
-      </div>
       <div class="btns">
-        <button onclick="run('run')">🚀 一键全流程</button>
-        <button class="ghost" onclick="run('rewrite')">1. 改写</button>
-        <button class="ghost" onclick="run('image')">2. 生图</button>
-        <button class="ghost" onclick="run('podcast')">3. 播客</button>
-        <button class="ghost" onclick="run('video')">4. 视频</button>
+        <button onclick="run('run')">一键全流程</button>
+        <button class="ghost" onclick="run('rewrite')">仅改写</button>
+        <button class="ghost" onclick="run('image')">仅生图</button>
+        <button class="ghost" onclick="run('podcast')">仅播客</button>
+        <button class="ghost" onclick="run('video')">仅视频</button>
       </div>
       <div id="status"></div>
     </div>
 
     <div class="panel">
-      <h2>结果</h2>
-      <div class="result">
-        <div id="rewritten"></div>
-        <div id="media"></div>
-        <div class="artifacts" id="artifacts"></div>
-      </div>
-      <h2 style="margin-top:18px">历史任务</h2>
+      <h2>最新产出</h2>
+      <div id="result"><div class="empty">尚未产出，点击上方「一键全流程」开始</div></div>
+      <h2 style="margin-top:22px">任务档案</h2>
       <div id="tasks"></div>
     </div>
   </div>
 
 <script>
+const state = { refPath: null, fileName: null, currentId: null };
+const drop = document.getElementById('drop');
+const fileInput = document.getElementById('file');
+
+drop.addEventListener('click', () => fileInput.click());
+['dragover','dragenter'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('on'); }));
+['dragleave','drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('on'); }));
+drop.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) upload(f); });
+fileInput.addEventListener('change', () => { const f = fileInput.files[0]; if (f) upload(f); });
+
+async function upload(file) {
+  setStatus('上传中…');
+  const fd = new FormData();
+  fd.append('file', file);
+  try {
+    const res = await fetch('/api/upload', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (data.ok) {
+      state.refPath = data.path; state.fileName = file.name;
+      drop.textContent = '✓ ' + file.name; drop.classList.add('has');
+      setStatus('参考图已上传');
+    } else { setStatus('上传失败：' + data.error, true); }
+  } catch (e) { setStatus('上传失败：' + e.message, true); }
+}
+
+function setStatus(msg, isErr) {
+  const el = document.getElementById('status');
+  el.className = isErr ? 'err' : '';
+  el.innerHTML = msg;
+}
+
 async function run(step) {
   const text = document.getElementById('text').value.trim();
   const id = document.getElementById('taskId').value.trim() || null;
-  const refImage = document.getElementById('refImage').value.trim() || null;
   const status = document.getElementById('status');
-  status.className = '';
-  status.textContent = '处理中…（视频合成含字幕需要较长时间，请耐心等待）';
+  if (step === 'run' || step === 'rewrite') { if (!text) { setStatus('请先填写参考文案', true); return; } }
+  if (step === 'run' || step === 'image' || step === 'video' || step === 'podcast') {
+    if (!id && !state.currentId && !(step === 'rewrite' || step === 'run')) { setStatus('续跑需要任务 ID（先跑过改写/全流程，或手动填写）', true); return; }
+  }
 
+  setStatus('<span class="spin"></span>' + (step === 'video' ? '视频合成含字幕，可能需要 10–20 分钟，请耐心等待…' : '处理中…'));
   const body = {};
   if (step === 'run' || step === 'rewrite') body.text = text;
-  if (id) body.id = id;
-  if ((step === 'run' || step === 'image') && refImage) body.ref_image = refImage;
-  if (step === 'podcast') body.script = false;
+  if (id) body.id = id; else if (state.currentId && step !== 'rewrite' && step !== 'run') body.id = state.currentId;
+  if ((step === 'run' || step === 'image') && state.refPath) body.ref_image = state.refPath;
 
   try {
-    const res = await fetch('/api/' + step, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
+    const res = await fetch('/api/' + step, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
     const data = await res.json();
     if (data.ok) {
-      status.className = 'ok';
-      status.textContent = data.message || '完成';
-      if (data.id) document.getElementById('taskId').value = data.id;
+      if (data.id) { state.currentId = data.id; document.getElementById('taskId').value = data.id; }
+      setStatus('✓ ' + (data.message || '完成'));
       renderResult(data);
-    } else {
-      status.className = 'err';
-      status.textContent = '错误：' + (data.error || '未知');
-    }
-  } catch (e) {
-    status.className = 'err';
-    status.textContent = '请求失败：' + e.message;
-  }
+      markDone(step);
+      loadTasks();
+    } else { setStatus('出错：' + (data.error || '未知'), true); }
+  } catch (e) { setStatus('请求失败：' + e.message, true); }
+}
+
+function markDone(step) {
+  const order = ['rewrite','image','podcast','video'];
+  const idx = order.indexOf(step);
+  order.forEach((s, i) => {
+    const st = document.querySelector(`.station[data-step="${s}"]`);
+    if (i <= idx) st.classList.add('done');
+  });
 }
 
 function renderResult(data) {
-  // 改写文案
-  const rw = document.getElementById('rewritten');
-  rw.innerHTML = '';
-  if (data.message && data.id && data.artifacts?.some(a => a.name === 'rewritten.md')) {
-    rw.innerHTML = '<div class="field"><label>改写文案</label><textarea>' + escapeHtml(data.message) + '</textarea></div>';
-  }
-  // 媒体预览
-  const media = document.getElementById('media');
-  media.innerHTML = '';
   const id = data.id;
-  if (!id) return;
-  if (data.artifacts?.some(a => a.name === 'video.mp4')) {
-    media.innerHTML = '<video controls src="/api/files/' + id + '/video.mp4"></video>';
-  } else if (data.artifacts?.some(a => a.name === 'podcast.mp3')) {
-    media.innerHTML = '<audio controls src="/api/files/' + id + '/podcast.mp3"></audio>';
+  const el = document.getElementById('result');
+  el.innerHTML = '';
+  const names = (data.artifacts || []).map(a => a.name);
+  // 改写文案
+  if (names.includes('rewritten.md')) {
+    el.appendChild(block('改写文案', 'textarea', id, 'rewritten.md'));
   }
-  if (data.artifacts?.some(a => a.name === 'image.png')) {
-    media.innerHTML += '<img class="preview" src="/api/files/' + id + '/image.png">';
+  // 脚本（若存在）
+  if (names.includes('script.md')) {
+    el.appendChild(block('播客脚本', 'pre', id, 'script.md'));
   }
-  // 产物链接
-  const arts = document.getElementById('artifacts');
-  arts.innerHTML = '';
-  for (const a of (data.artifacts || [])) {
-    arts.innerHTML += '<a href="' + a.url + '" target="_blank">' + a.name + ' (' + fmtSize(a.size) + ')</a>';
+  // 字幕
+  if (names.includes('subtitle.srt')) {
+    el.appendChild(block('字幕', 'pre', id, 'subtitle.srt'));
   }
-  loadTasks();
+  // 图片
+  if (names.includes('image.png')) {
+    el.appendChild(mediaBlock('配图', `<img class="prev" src="/api/files/${id}/image.png">`));
+  }
+  // 音频
+  if (names.includes('podcast.mp3')) {
+    el.appendChild(mediaBlock('播客音频', `<audio controls src="/api/files/${id}/podcast.mp3"></audio>`));
+  }
+  // 视频
+  if (names.includes('video.mp4')) {
+    el.appendChild(mediaBlock('成品视频', `<video controls src="/api/files/${id}/video.mp4"></video>`));
+  }
 }
 
-function escapeHtml(s) {
-  return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function block(caption, kind, id, name) {
+  const d = document.createElement('div');
+  d.className = 'artifact';
+  d.innerHTML = `<div class="cap">${caption} · ${name}</div>`;
+  const el = document.createElement(kind);
+  el.dataset.src = `/api/files/${id}/${name}`;
+  d.appendChild(el);
+  fetch(el.dataset.src).then(r => r.text()).then(t => { el.textContent = t; });
+  return d;
 }
 
-function fmtSize(n) {
-  if (n > 1048576) return (n/1048576).toFixed(1) + 'MB';
-  if (n > 1024) return (n/1024).toFixed(0) + 'KB';
-  return n + 'B';
+function mediaBlock(caption, html) {
+  const d = document.createElement('div');
+  d.className = 'artifact';
+  d.innerHTML = `<div class="cap">${caption}</div>${html}`;
+  return d;
 }
 
 async function loadTasks() {
@@ -160,14 +294,38 @@ async function loadTasks() {
   const data = await res.json();
   const el = document.getElementById('tasks');
   el.innerHTML = '';
-  for (const t of (data.tasks || [])) {
-    let links = '';
-    for (const a of t.artifacts || []) {
-      links += '<a href="' + a.url + '" target="_blank">' + a.name + '</a>';
-    }
-    el.innerHTML += '<div class="task"><span>' + t.id + '</span><div class="links">' + links + '</div></div>';
+  const tasks = data.tasks || [];
+  if (!tasks.length) { el.innerHTML = '<div class="empty">暂无任务</div>'; return; }
+  for (const t of tasks) {
+    const names = (t.artifacts || []).map(a => a.name);
+    const d = document.createElement('div');
+    d.className = 'task';
+    d.innerHTML = `
+      <div class="task-head">
+        <span class="tid">${t.id}</span>
+        <span class="meta">${names.length} 个产物</span>
+        <span class="chev">▶</span>
+      </div>
+      <div class="task-body"></div>`;
+    const head = d.querySelector('.task-head');
+    head.onclick = () => { d.classList.toggle('open'); if (d.classList.contains('open')) renderTaskBody(d.querySelector('.task-body'), t); };
+    el.appendChild(d);
   }
 }
+
+function renderTaskBody(box, t) {
+  box.innerHTML = '';
+  if (!t.artifacts.length) { box.innerHTML = '<div class="empty">无产物</div>'; return; }
+  let links = '';
+  for (const a of t.artifacts) links += `<a href="${a.url}" target="_blank">${a.name}</a>`;
+  box.innerHTML = `<div class="mini-links">${links}</div>`;
+  const names = t.artifacts.map(a => a.name);
+  if (names.includes('rewritten.md')) box.appendChild(block('改写文案', 'textarea', t.id, 'rewritten.md'));
+  if (names.includes('image.png')) box.appendChild(mediaBlock('配图', `<img class="prev" src="/api/files/${t.id}/image.png">`));
+  if (names.includes('podcast.mp3')) box.appendChild(mediaBlock('播客音频', `<audio controls src="/api/files/${t.id}/podcast.mp3"></audio>`));
+  if (names.includes('video.mp4')) box.appendChild(mediaBlock('成品视频', `<video controls src="/api/files/${t.id}/video.mp4"></video>`));
+}
+
 loadTasks();
 </script>
 </body>

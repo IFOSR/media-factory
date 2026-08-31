@@ -244,7 +244,7 @@ async fn download(AxPath((id, name)): AxPath<(String, String)>) -> Response {
     match std::fs::read(&path) {
         Ok(bytes) => {
             let ct = match name.rsplit('.').next() {
-                Some("png") => "image/png",
+                Some("png") | Some("jpg") | Some("jpeg") => "image/png",
                 Some("mp3") => "audio/mpeg",
                 Some("mp4") => "video/mp4",
                 Some("srt") => "application/x-subrip",
@@ -264,6 +264,45 @@ async fn download(AxPath((id, name)): AxPath<(String, String)>) -> Response {
     }
 }
 
+/// 参考图上传（multipart，字段名 file），保存到 uploads/，返回绝对路径
+async fn upload(mut multipart: axum::extract::Multipart) -> Response {
+    let result = async {
+        let mut saved: Option<String> = None;
+        while let Some(field) = multipart.next_field().await? {
+            if field.name() != Some("file") {
+                continue;
+            }
+            let filename = field.file_name().unwrap_or("upload").to_string();
+            let data = field.bytes().await?;
+            anyhow::ensure!(!data.is_empty(), "上传文件为空");
+            let ext = Path::new(&filename)
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("png");
+            let safe: String = filename
+                .chars()
+                .filter(|c| c.is_alphanumeric() || *c == '-' || *c == '_' || *c == '.')
+                .take(60)
+                .collect();
+            let ts = chrono::Local::now().format("%Y%m%d-%H%M%S");
+            let dir = Path::new("uploads");
+            std::fs::create_dir_all(dir)?;
+            let path = dir.join(format!("{ts}-{safe}.{ext}"));
+            std::fs::write(&path, &data)?;
+            saved = Some(path.canonicalize()?.to_string_lossy().to_string());
+        }
+        match saved {
+            Some(p) => Ok(Json(json!({"ok": true, "path": p}))),
+            None => anyhow::bail!("未收到文件字段（字段名应为 file）"),
+        }
+    }
+    .await;
+    match result {
+        Ok(resp) => resp.into_response(),
+        Err(e) => (StatusCode::BAD_REQUEST, Json(err(e))).into_response(),
+    }
+}
+
 async fn ui() -> Html<&'static str> {
     Html(include_str!("../web/index.html"))
 }
@@ -280,6 +319,7 @@ pub async fn run(port: u16) -> anyhow::Result<()> {
         .route("/api/tasks", get(list_tasks))
         .route("/api/tasks/:id", get(task_info))
         .route("/api/files/:id/:name", get(download))
+        .route("/api/upload", post(upload))
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind(("0.0.0.0", port)).await?;
