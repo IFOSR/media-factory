@@ -15,9 +15,10 @@ use tokio::sync::Mutex;
 
 use crate::cmd;
 use crate::config::Config;
-use crate::pi_rpc::PiRpcAgent;
+use crate::pi_rpc::{self, PiRpcAgent};
 use crate::podcast as podcast_backend;
 use crate::provider;
+use crate::wizard;
 
 const OUTPUT_ROOT: &str = "output";
 
@@ -307,6 +308,35 @@ async fn ui() -> Html<&'static str> {
     Html(include_str!("../web/index.html"))
 }
 
+/// 列出 pi 可用的语言模型
+async fn pi_models() -> Vec<String> {
+    match pi_rpc::rpc_once(
+        Path::new("pi"),
+        None,
+        json!({"type": "get_available_models"}),
+    )
+    .await
+    {
+        Ok(data) => wizard::parse_available_models(&data),
+        Err(_) => vec![],
+    }
+}
+
+/// 读取配置（含 pi 可用模型）
+async fn get_config() -> Response {
+    let cfg = Config::load(&Config::path()).unwrap_or_default();
+    let models = pi_models().await;
+    Json(json!({"ok": true, "config": cfg, "models": models})).into_response()
+}
+
+/// 保存配置
+async fn put_config(Json(cfg): Json<Config>) -> Response {
+    match cfg.save(&Config::path()) {
+        Ok(()) => Json(json!({"ok": true})).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(err(e))).into_response(),
+    }
+}
+
 pub async fn run(port: u16) -> anyhow::Result<()> {
     let state = AppState { run_lock: Arc::new(Mutex::new(())) };
     let app = Router::new()
@@ -320,6 +350,7 @@ pub async fn run(port: u16) -> anyhow::Result<()> {
         .route("/api/tasks/:id", get(task_info))
         .route("/api/files/:id/:name", get(download))
         .route("/api/upload", post(upload))
+        .route("/api/config", get(get_config).put(put_config))
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind(("0.0.0.0", port)).await?;

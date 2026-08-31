@@ -31,6 +31,10 @@
   .topbar h1 { font-size: 22px; letter-spacing: .5px; font-weight: 650; }
   .topbar .brand { color: var(--amber); font-family: var(--mono); font-size: 22px; }
   .topbar .sub { color: var(--muted); font-size: 13px; }
+  .topbar .spacer { flex: 1; }
+  .iconbtn { background: transparent; border: 1px solid var(--line); color: var(--text);
+    border-radius: 8px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
+  .iconbtn:hover { border-color: var(--amber); color: var(--amber); }
 
   /* 生产线 —— 签名元素 */
   .line { display: flex; align-items: stretch; gap: 0; margin-bottom: 26px; }
@@ -109,6 +113,29 @@
   .task-body .mini-links a { color: var(--cyan); text-decoration: none; font-size: 12px; font-family: var(--mono); }
   .task-body .mini-links a:hover { text-decoration: underline; }
   .empty { color: var(--muted); font-size: 13px; text-align: center; padding: 20px 0; }
+
+  /* 配置弹窗 */
+  .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); backdrop-filter: blur(3px);
+    display: none; align-items: center; justify-content: center; z-index: 50; padding: 20px; }
+  .overlay.show { display: flex; }
+  .cfg-modal { background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+    width: 560px; max-width: 100%; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; }
+  .cfg-head { display: flex; justify-content: space-between; align-items: center;
+    padding: 16px 20px; border-bottom: 1px solid var(--line); font-size: 15px; font-weight: 600; }
+  .cfg-head .x { background: none; border: none; color: var(--muted); font-size: 20px; cursor: pointer; }
+  .cfg-body { padding: 18px 20px; overflow-y: auto; }
+  .cfg-body section { margin-bottom: 20px; }
+  .cfg-body section h3 { font-size: 13px; margin-bottom: 10px; color: var(--text); }
+  .cfg-body section h3::before { content: "// "; color: var(--amber); font-family: var(--mono); }
+  .cfg-body select { width: 100%; background: var(--ink-2); border: 1px solid var(--line);
+    border-radius: 8px; color: var(--text); padding: 9px 10px; font-size: 13px; margin-bottom: 8px; }
+  .cfg-body .row { display: flex; gap: 8px; margin-bottom: 8px; }
+  .cfg-body .row input { flex: 1; }
+  .cfg-foot { padding: 14px 20px; border-top: 1px solid var(--line); display: flex; justify-content: flex-end; gap: 8px; }
+  .custom-item { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    background: var(--ink-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; margin-bottom: 6px; font-size: 13px; }
+  .custom-item .del { background: none; border: none; color: var(--err); cursor: pointer; font-size: 13px; }
+  .hint { font-size: 11px; color: var(--muted); margin-top: 4px; }
 </style>
 </head>
 <body>
@@ -116,6 +143,8 @@
     <span class="brand">▮▮</span>
     <h1>Media Factory</h1>
     <span class="sub">自媒体内容生产线：改写 · 生图 · 播客 · 视频（含字幕）</span>
+    <span class="spacer"></span>
+    <button class="iconbtn" onclick="openConfig()">⚙ 配置</button>
   </div>
 
   <div class="line">
@@ -327,6 +356,200 @@ function renderTaskBody(box, t) {
 }
 
 loadTasks();
+
+/* ===== 配置面板 ===== */
+const IMAGE_BUILTINS = [
+  { key: 'nano-banana', label: 'nano-banana（官方 Gemini 生图）' },
+  { key: 'openai-image', label: 'openai-image（gpt-image）' },
+  { key: 'doubao-seedream', label: 'doubao-seedream（豆包生图）' },
+];
+const PODCAST_BUILTINS = [
+  { key: 'volc-podcast', label: 'volc-podcast（火山播客大模型，推荐）', extra: ['appid'] },
+  { key: 'openai-tts', label: 'openai-tts（通用 TTS）' },
+  { key: 'gemini-tts', label: 'gemini-tts（通用 TTS）' },
+  { key: 'volc-tts', label: 'volc-tts（火山豆包语音）', extra: ['appid'] },
+];
+let CFG = null; // 当前配置对象
+let CFG_MODELS = []; // pi 可用模型
+
+async function openConfig() {
+  document.getElementById('cfgOverlay').classList.add('show');
+  const res = await fetch('/api/config');
+  const data = await res.json();
+  CFG = data.config || { tasks: {}, providers: {} };
+  CFG_MODELS = data.models || [];
+  CFG.providers = CFG.providers || {};
+  CFG.tasks = CFG.tasks || {};
+  renderConfig();
+}
+function closeConfig() { document.getElementById('cfgOverlay').classList.remove('show'); }
+
+function customNames() {
+  return Object.entries(CFG.providers)
+    .filter(([, p]) => p.type === 'openai-compatible')
+    .map(([n]) => n);
+}
+
+function renderConfig() {
+  // 语言模型
+  const llm = document.getElementById('cfgLlm');
+  llm.innerHTML = '<option value="">使用 pi 默认模型</option>';
+  for (const m of CFG_MODELS) llm.innerHTML += `<option value="${m}">${m}</option>`;
+  const curLlm = CFG.tasks.llm?.model || '';
+  llm.value = curLlm;
+
+  // 生图
+  const img = document.getElementById('cfgImage');
+  const customs = customNames();
+  img.innerHTML = '';
+  for (const b of IMAGE_BUILTINS) img.innerHTML += `<option value="${b.key}">${b.label}</option>`;
+  for (const c of customs) img.innerHTML += `<option value="${c}">${c}（自定义）</option>`;
+  const imgSel = CFG.tasks.image?.provider || 'nano-banana';
+  img.value = imgSel;
+  img.onchange = () => renderProviderFields();
+
+  // 播客
+  const pod = document.getElementById('cfgPodcast');
+  pod.innerHTML = '';
+  for (const b of PODCAST_BUILTINS) pod.innerHTML += `<option value="${b.key}">${b.label}</option>`;
+  for (const c of customs) pod.innerHTML += `<option value="${c}">${c}（自定义）</option>`;
+  const podSel = CFG.tasks.podcast?.provider || 'volc-podcast';
+  pod.value = podSel;
+  pod.onchange = () => renderProviderFields();
+
+  renderProviderFields();
+  renderCustoms();
+}
+
+function renderProviderFields() {
+  // 生图 key 输入
+  const imgSel = document.getElementById('cfgImage').value;
+  const imgKeyWrap = document.getElementById('imgKeyWrap');
+  const isImgBuiltin = IMAGE_BUILTINS.some(b => b.key === imgSel);
+  imgKeyWrap.style.display = isImgBuiltin ? 'block' : 'none';
+  if (isImgBuiltin) {
+    const p = CFG.providers[imgSel];
+    document.getElementById('cfgImageKey').value = p?.api_key || '';
+  }
+
+  // 播客 key + appid
+  const podSel = document.getElementById('cfgPodcast').value;
+  const podKeyWrap = document.getElementById('podKeyWrap');
+  const podAppidWrap = document.getElementById('podAppidWrap');
+  const b = PODCAST_BUILTINS.find(x => x.key === podSel);
+  const isPodBuiltin = !!b;
+  podKeyWrap.style.display = isPodBuiltin ? 'block' : 'none';
+  podAppidWrap.style.display = (isPodBuiltin && b.extra?.includes('appid')) ? 'block' : 'none';
+  if (isPodBuiltin) {
+    const p = CFG.providers[podSel];
+    document.getElementById('cfgPodcastKey').value = p?.api_key || '';
+    document.getElementById('cfgPodcastAppid').value = p?.extra?.appid || '';
+  }
+}
+
+function renderCustoms() {
+  const el = document.getElementById('cfgCustoms');
+  el.innerHTML = '';
+  const customs = customNames();
+  if (!customs.length) { el.innerHTML = '<div class="hint">暂无自定义 provider，可在下方添加</div>'; }
+  for (const n of customs) {
+    const p = CFG.providers[n];
+    const d = document.createElement('div');
+    d.className = 'custom-item';
+    d.innerHTML = `<span><b>${n}</b> · ${p.model} · ${p.base_url}</span><button class="del" data-n="${n}">删除</button>`;
+    d.querySelector('.del').onclick = () => {
+      delete CFG.providers[n];
+      renderConfig();
+    };
+    el.appendChild(d);
+  }
+}
+
+function addCustom() {
+  const name = document.getElementById('cName').value.trim();
+  const base = document.getElementById('cBase').value.trim();
+  const key = document.getElementById('cKey').value.trim();
+  const model = document.getElementById('cModel').value.trim();
+  if (!name || !base || !model) { alert('名称 / BaseURL / 模型名 必填'); return; }
+  CFG.providers[name] = { type: 'openai-compatible', base_url: base, api_key: key, model };
+  document.getElementById('cName').value = '';
+  document.getElementById('cBase').value = '';
+  document.getElementById('cKey').value = '';
+  document.getElementById('cModel').value = '';
+  renderConfig();
+}
+
+async function saveConfig() {
+  // 汇总语言模型
+  const llm = document.getElementById('cfgLlm').value;
+  CFG.tasks.llm = llm ? { model: llm } : null;
+
+  // 生图
+  const imgSel = document.getElementById('cfgImage').value;
+  CFG.tasks.image = { provider: imgSel };
+  if (IMAGE_BUILTINS.some(b => b.key === imgSel)) {
+    CFG.providers[imgSel] = { type: 'builtin', kind: imgSel, api_key: document.getElementById('cfgImageKey').value, extra: {} };
+  }
+
+  // 播客
+  const podSel = document.getElementById('cfgPodcast').value;
+  CFG.tasks.podcast = { provider: podSel };
+  const b = PODCAST_BUILTINS.find(x => x.key === podSel);
+  if (b) {
+    const extra = {};
+    if (b.extra?.includes('appid')) extra.appid = document.getElementById('cfgPodcastAppid').value;
+    CFG.providers[podSel] = { type: 'builtin', kind: podSel, api_key: document.getElementById('cfgPodcastKey').value, extra };
+  }
+
+  const res = await fetch('/api/config', { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(CFG) });
+  const data = await res.json();
+  if (data.ok) { closeConfig(); setStatus('✓ 配置已保存'); }
+  else alert('保存失败：' + (data.error || '未知'));
+}
 </script>
+  <div class="overlay" id="cfgOverlay">
+    <div class="cfg-modal">
+      <div class="cfg-head">
+        <span>Agent 配置</span>
+        <button class="x" onclick="closeConfig()">×</button>
+      </div>
+      <div class="cfg-body">
+        <section>
+          <h3>语言模型（pi agent）</h3>
+          <select id="cfgLlm"></select>
+          <div class="hint">pi 环境已认证的模型；留空则使用 pi 默认模型。</div>
+        </section>
+        <section>
+          <h3>生图 provider</h3>
+          <select id="cfgImage"></select>
+          <div id="imgKeyWrap">
+            <input type="text" id="cfgImageKey" placeholder="API Key">
+          </div>
+        </section>
+        <section>
+          <h3>播客 provider</h3>
+          <select id="cfgPodcast"></select>
+          <div id="podKeyWrap">
+            <input type="text" id="cfgPodcastKey" placeholder="Access Token / API Key">
+          </div>
+          <div id="podAppidWrap">
+            <input type="text" id="cfgPodcastAppid" placeholder="appid（火山需填）">
+          </div>
+        </section>
+        <section>
+          <h3>自定义 provider（Other）</h3>
+          <div id="cfgCustoms"></div>
+          <div class="row"><input type="text" id="cName" placeholder="名称"></div>
+          <div class="row"><input type="text" id="cBase" placeholder="BaseURL（https://…）"></div>
+          <div class="row"><input type="text" id="cKey" placeholder="API Key"><input type="text" id="cModel" placeholder="模型名"></div>
+          <button class="ghost" onclick="addCustom()">+ 添加自定义 provider</button>
+        </section>
+      </div>
+      <div class="cfg-foot">
+        <button class="ghost" onclick="closeConfig()">取消</button>
+        <button onclick="saveConfig()">保存配置</button>
+      </div>
+    </div>
+  </div>
 </body>
 </html>
