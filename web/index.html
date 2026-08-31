@@ -174,6 +174,10 @@
         <textarea id="text" placeholder="粘贴要改写的参考文案…"></textarea>
       </div>
       <div class="field">
+        <label>改写要求（可选，叠加在系统爆款要求之上）</label>
+        <textarea id="prompt" style="min-height:70px" placeholder="如：面向小红书，语气活泼，多用 emoji，500 字左右"></textarea>
+      </div>
+      <div class="field">
         <label>参考图（可选，作为生图参考）</label>
         <div class="drop" id="drop">点击或拖拽图片到这里上传</div>
         <input type="file" id="file" accept="image/*" hidden>
@@ -234,6 +238,7 @@ function setStatus(msg, isErr) {
 
 async function run(step) {
   const text = document.getElementById('text').value.trim();
+  const prompt = document.getElementById('prompt').value.trim();
   const id = document.getElementById('taskId').value.trim() || null;
   const status = document.getElementById('status');
   if (step === 'run' || step === 'rewrite') { if (!text) { setStatus('请先填写参考文案', true); return; } }
@@ -244,6 +249,7 @@ async function run(step) {
   setStatus('<span class="spin"></span>' + (step === 'video' ? '视频合成含字幕，可能需要 10–20 分钟，请耐心等待…' : '处理中…'));
   const body = {};
   if (step === 'run' || step === 'rewrite') body.text = text;
+  if ((step === 'run' || step === 'rewrite') && prompt) body.prompt = prompt;
   if (id) body.id = id; else if (state.currentId && step !== 'rewrite' && step !== 'run') body.id = state.currentId;
   if ((step === 'run' || step === 'image') && state.refPath) body.ref_image = state.refPath;
 

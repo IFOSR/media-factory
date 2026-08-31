@@ -10,3 +10,5 @@
 
 参考内容：
 {{SOURCE}}
+
+{{USER_PROMPT}}

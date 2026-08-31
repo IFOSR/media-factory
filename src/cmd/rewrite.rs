@@ -14,8 +14,16 @@ fn rewrite_template() -> String {
     include_str!("../../prompts/rewrite.txt").to_string()
 }
 
-fn render_prompt(source: &str) -> String {
-    rewrite_template().replace("{{SOURCE}}", source)
+fn render_prompt(source: &str, user_prompt: Option<&str>) -> String {
+    let user_section = match user_prompt.map(|u| u.trim()) {
+        Some(u) if !u.is_empty() => {
+            format!("\n用户额外要求（请尽量满足，但以上基本要求仍然有效）：\n{u}\n")
+        }
+        _ => String::new(),
+    };
+    rewrite_template()
+        .replace("{{SOURCE}}", source)
+        .replace("{{USER_PROMPT}}", &user_section)
 }
 
 /// 核心流程（可注入 llm 以便测试）。返回任务 id。
@@ -24,6 +32,7 @@ pub async fn run_with(
     source: &str,
     id: Option<String>,
     llm: &dyn LlmAgent,
+    user_prompt: Option<&str>,
 ) -> anyhow::Result<String> {
     let id = id.unwrap_or_else(|| {
         chrono::Local::now().format("%Y%m%d-%H%M%S").to_string()
@@ -34,7 +43,7 @@ pub async fn run_with(
 
     std::fs::write(dir.join("input.md"), source)?;
 
-    let prompt = render_prompt(source);
+    let prompt = render_prompt(source, user_prompt);
     let out = llm.complete(&prompt).await?;
 
     std::fs::write(dir.join("rewritten.md"), &out)?;
@@ -44,11 +53,11 @@ pub async fn run_with(
 }
 
 /// 公开入口：读输入（文件/stdin）→ 加载配置 → PiRpcAgent → run_with
-pub async fn run(input: Option<String>, id: Option<String>) -> anyhow::Result<String> {
+pub async fn run(input: Option<String>, id: Option<String>, user_prompt: Option<String>) -> anyhow::Result<String> {
     let source = read_input(input)?;
     let cfg = Config::load(&Config::path())?;
     let llm = PiRpcAgent::new(cfg.tasks.llm.map(|l| l.model))?;
-    run_with(Path::new("output"), &source, id, &llm).await
+    run_with(Path::new("output"), &source, id, &llm, user_prompt.as_deref()).await
 }
 
 pub(crate) fn read_input(input: Option<String>) -> anyhow::Result<String> {
@@ -83,6 +92,7 @@ mod tests {
             "原始参考文案内容",
             Some("task1".into()),
             &MockLlm("爆款文案".into()),
+            None,
         )
         .await
         .unwrap();
@@ -96,8 +106,16 @@ mod tests {
 
     #[test]
     fn template_injects_source() {
-        let p = render_prompt("测试内容");
+        let p = render_prompt("测试内容", None);
         assert!(p.contains("测试内容"));
         assert!(!p.contains("{{SOURCE}}"));
+        assert!(!p.contains("{{USER_PROMPT}}"));
+    }
+
+    #[test]
+    fn template_injects_user_prompt() {
+        let p = render_prompt("测试内容", Some("面向小红书，语气活泼"));
+        assert!(p.contains("面向小红书，语气活泼"));
+        assert!(p.contains("用户额外要求"));
     }
 }

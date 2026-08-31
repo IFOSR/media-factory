@@ -35,6 +35,8 @@ struct RunReq {
     ref_image: Option<String>,
     #[serde(default)]
     id: Option<String>,
+    #[serde(default)]
+    prompt: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -42,6 +44,8 @@ struct RewriteReq {
     text: String,
     #[serde(default)]
     id: Option<String>,
+    #[serde(default)]
+    prompt: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -151,6 +155,7 @@ async fn run_pipeline_inner(req: RunReq) -> anyhow::Result<ApiResp> {
         &req.text,
         req.id,
         req.ref_image.map(PathBuf::from),
+        req.prompt.as_deref(),
     )
     .await?;
     Ok(ok(Some(id.clone()), Some("全流程完成".into()), Some(list_artifacts(&id))))
@@ -159,7 +164,7 @@ async fn run_pipeline_inner(req: RunReq) -> anyhow::Result<ApiResp> {
 async fn rewrite(Json(req): Json<RewriteReq>) -> Response {
     let result = async {
         let (_cfg, llm) = load_ctx()?;
-        let id = cmd::rewrite::run_with(Path::new(OUTPUT_ROOT), &req.text, req.id, &llm).await?;
+        let id = cmd::rewrite::run_with(Path::new(OUTPUT_ROOT), &req.text, req.id, &llm, req.prompt.as_deref()).await?;
         let rewritten = std::fs::read_to_string(Path::new(OUTPUT_ROOT).join(&id).join("rewritten.md")).unwrap_or_default();
         Ok(ok(Some(id.clone()), Some(rewritten), Some(list_artifacts(&id))))
     }

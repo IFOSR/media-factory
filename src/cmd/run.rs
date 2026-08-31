@@ -9,7 +9,12 @@ use crate::provider;
 
 /// 串联执行全部四步：改写 → 生图 → 播客 → 视频。
 /// 任一步失败即停止，可用 `--id <id> <失败子命令>` 续跑。
-pub async fn run(input: Option<String>, id: Option<String>, reference: Option<String>) -> anyhow::Result<String> {
+pub async fn run(
+    input: Option<String>,
+    id: Option<String>,
+    reference: Option<String>,
+    user_prompt: Option<String>,
+) -> anyhow::Result<String> {
     let cfg = Config::load(&Config::path())?;
     let llm = PiRpcAgent::new(cfg.tasks.llm.clone().map(|l| l.model))?;
     let source = rewrite::read_input(input)?;
@@ -20,6 +25,7 @@ pub async fn run(input: Option<String>, id: Option<String>, reference: Option<St
         &source,
         id,
         reference.map(PathBuf::from),
+        user_prompt.as_deref(),
     )
     .await
 }
@@ -32,8 +38,9 @@ pub async fn run_with_config(
     source: &str,
     id: Option<String>,
     reference: Option<PathBuf>,
+    user_prompt: Option<&str>,
 ) -> anyhow::Result<String> {
-    let id = rewrite::run_with(output_root, source, id, llm).await?;
+    let id = rewrite::run_with(output_root, source, id, llm, user_prompt).await?;
     let dir = output_root.join(&id);
 
     let img_provider = provider::resolve_image(cfg)?;
@@ -168,7 +175,7 @@ done
         let llm = PiRpcAgent::with_binary(pi_bin, None).unwrap();
         let root = dir.path().join("output");
 
-        run_with_config(&root, &cfg, &llm, "原始参考内容", Some("e2e1".into()), None)
+        run_with_config(&root, &cfg, &llm, "原始参考内容", Some("e2e1".into()), None, None)
             .await
             .unwrap();
 
