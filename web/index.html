@@ -421,15 +421,24 @@ function renderConfig() {
   renderCustoms();
 }
 
+function maskKey(k) {
+  if (!k) return '';
+  if (k.length <= 8) return '••••••••';
+  return k.slice(0, 4) + '••••' + k.slice(-4);
+}
+
 function renderProviderFields() {
-  // 生图 key 输入
+  // 生图 key 输入（脱敏显示，不填新值则保留原值）
   const imgSel = document.getElementById('cfgImage').value;
   const imgKeyWrap = document.getElementById('imgKeyWrap');
   const isImgBuiltin = IMAGE_BUILTINS.some(b => b.key === imgSel);
   imgKeyWrap.style.display = isImgBuiltin ? 'block' : 'none';
   if (isImgBuiltin) {
     const p = CFG.providers[imgSel];
-    document.getElementById('cfgImageKey').value = p?.api_key || '';
+    const key = p?.api_key || '';
+    const inp = document.getElementById('cfgImageKey');
+    inp.value = '';
+    inp.placeholder = key ? '已配置 ' + maskKey(key) + '（留空保持原值）' : 'API Key';
   }
 
   // 播客 key + appid
@@ -442,7 +451,11 @@ function renderProviderFields() {
   podAppidWrap.style.display = (isPodBuiltin && b.extra?.includes('appid')) ? 'block' : 'none';
   if (isPodBuiltin) {
     const p = CFG.providers[podSel];
-    document.getElementById('cfgPodcastKey').value = p?.api_key || '';
+    const key = p?.api_key || '';
+    const keyInp = document.getElementById('cfgPodcastKey');
+    keyInp.value = '';
+    keyInp.placeholder = key ? '已配置 ' + maskKey(key) + '（留空保持原值）' : 'Access Token / API Key';
+    // appid 非密钥，明文展示
     document.getElementById('cfgPodcastAppid').value = p?.extra?.appid || '';
   }
 }
@@ -488,7 +501,10 @@ async function saveConfig() {
   const imgSel = document.getElementById('cfgImage').value;
   CFG.tasks.image = { provider: imgSel };
   if (IMAGE_BUILTINS.some(b => b.key === imgSel)) {
-    CFG.providers[imgSel] = { type: 'builtin', kind: imgSel, api_key: document.getElementById('cfgImageKey').value, extra: {} };
+    const existing = CFG.providers[imgSel];
+    const newKey = document.getElementById('cfgImageKey').value.trim();
+    const key = newKey || existing?.api_key || '';
+    CFG.providers[imgSel] = { type: 'builtin', kind: imgSel, api_key: key, extra: existing?.extra || {} };
   }
 
   // 播客
@@ -496,9 +512,15 @@ async function saveConfig() {
   CFG.tasks.podcast = { provider: podSel };
   const b = PODCAST_BUILTINS.find(x => x.key === podSel);
   if (b) {
-    const extra = {};
-    if (b.extra?.includes('appid')) extra.appid = document.getElementById('cfgPodcastAppid').value;
-    CFG.providers[podSel] = { type: 'builtin', kind: podSel, api_key: document.getElementById('cfgPodcastKey').value, extra };
+    const existing = CFG.providers[podSel];
+    const newKey = document.getElementById('cfgPodcastKey').value.trim();
+    const key = newKey || existing?.api_key || '';
+    const extra = { ...(existing?.extra || {}) };
+    if (b.extra?.includes('appid')) {
+      const appidVal = document.getElementById('cfgPodcastAppid').value.trim();
+      if (appidVal) extra.appid = appidVal;
+    }
+    CFG.providers[podSel] = { type: 'builtin', kind: podSel, api_key: key, extra };
   }
 
   const res = await fetch('/api/config', { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(CFG) });
