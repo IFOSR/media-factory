@@ -36,12 +36,16 @@ enum Commands {
         #[arg(long)] id: Option<String>,
         /// 可选参考图
         #[arg(long)] r#ref: Option<String>,
+        /// 用户自定义生图要求（叠加在系统提炼要求之上）
+        #[arg(long)] prompt: Option<String>,
     },
     /// 步骤 3：基于改写文案生成播客
     Podcast {
         #[arg(long)] id: Option<String>,
         /// 模式 B：先生成脚本（脚本已存在时直接按脚本合成）
         #[arg(long)] script: bool,
+        /// 用户自定义播客风格要求
+        #[arg(long)] prompt: Option<String>,
     },
     /// 步骤 4：图片 + 播客合成视频
     Video {
@@ -54,6 +58,10 @@ enum Commands {
         #[arg(long)] r#ref: Option<String>,
         /// 用户自定义改写要求
         #[arg(long)] prompt: Option<String>,
+        /// 用户自定义生图要求
+        #[arg(long)] image_prompt: Option<String>,
+        /// 用户自定义播客风格要求
+        #[arg(long)] podcast_prompt: Option<String>,
     },
     /// 启动 Web 服务（功能与 CLI 一致）
     Serve {
@@ -89,17 +97,17 @@ async fn main() -> anyhow::Result<()> {
         Commands::Rewrite { input, id, prompt } => {
             cmd::rewrite::run(input, id, prompt).await?;
         }
-        Commands::Image { id, r#ref } => {
-            cmd::image::run(id, r#ref).await?;
+        Commands::Image { id, r#ref, prompt } => {
+            cmd::image::run(id, r#ref, prompt).await?;
         }
-        Commands::Podcast { id, script } => {
-            cmd::podcast::run(id, script).await?;
+        Commands::Podcast { id, script, prompt } => {
+            cmd::podcast::run(id, script, prompt).await?;
         }
         Commands::Video { id } => {
             cmd::video::run(id)?;
         }
-        Commands::Run { input, id, r#ref, prompt } => {
-            cmd::run::run(input, id, r#ref, prompt).await?;
+        Commands::Run { input, id, r#ref, prompt, image_prompt, podcast_prompt } => {
+            cmd::run::run(input, id, r#ref, prompt, image_prompt, podcast_prompt).await?;
         }
         Commands::Serve { port } => {
             server::run(port).await?;

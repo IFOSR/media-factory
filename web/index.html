@@ -175,7 +175,15 @@
       </div>
       <div class="field">
         <label>改写要求（可选，叠加在系统爆款要求之上）</label>
-        <textarea id="prompt" style="min-height:70px" placeholder="如：面向小红书，语气活泼，多用 emoji，500 字左右"></textarea>
+        <textarea id="prompt" style="min-height:60px" placeholder="如：面向小红书，语气活泼，多用 emoji，500 字左右"></textarea>
+      </div>
+      <div class="field">
+        <label>生图要求（可选，如画面风格/配色）</label>
+        <textarea id="imagePrompt" style="min-height:50px" placeholder="如：扁平插画风，暖色调，扁平化构图"></textarea>
+      </div>
+      <div class="field">
+        <label>播客风格要求（可选）</label>
+        <textarea id="podcastPrompt" style="min-height:50px" placeholder="如：轻松幽默，两位主播多互动"></textarea>
       </div>
       <div class="field">
         <label>参考图（可选，作为生图参考）</label>
@@ -239,6 +247,8 @@ function setStatus(msg, isErr) {
 async function run(step) {
   const text = document.getElementById('text').value.trim();
   const prompt = document.getElementById('prompt').value.trim();
+  const imagePrompt = document.getElementById('imagePrompt').value.trim();
+  const podcastPrompt = document.getElementById('podcastPrompt').value.trim();
   const id = document.getElementById('taskId').value.trim() || null;
   const status = document.getElementById('status');
   if (step === 'run' || step === 'rewrite') { if (!text) { setStatus('请先填写参考文案', true); return; } }
@@ -250,6 +260,10 @@ async function run(step) {
   const body = {};
   if (step === 'run' || step === 'rewrite') body.text = text;
   if ((step === 'run' || step === 'rewrite') && prompt) body.prompt = prompt;
+  if (step === 'run' && imagePrompt) body.image_prompt = imagePrompt;
+  if (step === 'image' && imagePrompt) body.prompt = imagePrompt;
+  if (step === 'run' && podcastPrompt) body.podcast_prompt = podcastPrompt;
+  if (step === 'podcast' && podcastPrompt) body.prompt = podcastPrompt;
   if (id) body.id = id; else if (state.currentId && step !== 'rewrite' && step !== 'run') body.id = state.currentId;
   if ((step === 'run' || step === 'image') && state.refPath) body.ref_image = state.refPath;
 

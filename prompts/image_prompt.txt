@@ -8,3 +8,5 @@
 
 文案：
 {{TEXT}}
+
+{{USER_PROMPT}}

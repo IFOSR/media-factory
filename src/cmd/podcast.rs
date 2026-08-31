@@ -20,6 +20,7 @@ pub async fn run_with(
     llm: &dyn LlmAgent,
     backend: &PodcastBackend,
     force_script: bool,
+    user_prompt: Option<&str>,
 ) -> anyhow::Result<()> {
     let rewritten_path = dir.join("rewritten.md");
     anyhow::ensure!(
@@ -31,8 +32,16 @@ pub async fn run_with(
     let script_path = dir.join("script.md");
 
     match backend {
-        PodcastBackend::Volc(v) => run_volc(v, dir, &script_path, &text, force_script).await,
-        PodcastBackend::Tts(t) => run_tts(t.as_ref(), dir, &script_path, &text, llm).await,
+        PodcastBackend::Volc(v) => run_volc(v, dir, &script_path, &text, force_script, user_prompt).await,
+        PodcastBackend::Tts(t) => run_tts(t.as_ref(), dir, &script_path, &text, llm, user_prompt).await,
+    }
+}
+
+/// 把用户风格要求拼到输入文本前（volc-podcast 无独立风格字段，用前缀提示影响）
+fn with_style(text: &str, user_prompt: Option<&str>) -> String {
+    match user_prompt.map(|u| u.trim()) {
+        Some(u) if !u.is_empty() => format!("【播客风格要求：{u}】\n\n{text}"),
+        _ => text.to_string(),
     }
 }
 
@@ -42,12 +51,14 @@ async fn run_volc(
     script_path: &Path,
     text: &str,
     force_script: bool,
+    user_prompt: Option<&str>,
 ) -> anyhow::Result<()> {
+    let input_text = with_style(text, user_prompt);
     // 模式 B：生成脚本供人工修改
     if force_script && !script_path.exists() {
         let res = v
             .generate(&PodcastRequest {
-                input_text: Some(text.to_string()),
+                input_text: Some(input_text),
                 nlp_texts: None,
                 only_nlp_text: true,
             })
@@ -88,7 +99,7 @@ async fn run_volc(
     // 模式 A（默认）：文本 → 直接合成
     let res = v
         .generate(&PodcastRequest {
-            input_text: Some(text.to_string()),
+            input_text: Some(input_text),
             nlp_texts: None,
             only_nlp_text: false,
         })
@@ -111,12 +122,21 @@ async fn run_tts(
     script_path: &Path,
     text: &str,
     llm: &dyn LlmAgent,
+    user_prompt: Option<&str>,
 ) -> anyhow::Result<()> {
     // 脚本：已存在则直接用，否则 pi 生成
     let script = if script_path.exists() {
         std::fs::read_to_string(script_path)?
     } else {
-        let prompt = script_prompt_template().replace("{{TEXT}}", text);
+        let user_section = match user_prompt.map(|u| u.trim()) {
+            Some(u) if !u.is_empty() => {
+                format!("\n用户额外要求（请尽量融入对白风格，但以上基本要求仍然有效）：\n{u}\n")
+            }
+            _ => String::new(),
+        };
+        let prompt = script_prompt_template()
+            .replace("{{TEXT}}", text)
+            .replace("{{USER_PROMPT}}", &user_section);
         let s = llm.complete(&prompt).await?;
         std::fs::write(script_path, &s)?;
         s
@@ -151,7 +171,11 @@ fn write_audio(dir: &Path, bytes: &[u8]) -> anyhow::Result<()> {
 }
 
 /// 公开入口
-pub async fn run(id: Option<String>, force_script: bool) -> anyhow::Result<String> {
+pub async fn run(
+    id: Option<String>,
+    force_script: bool,
+    user_prompt: Option<String>,
+) -> anyhow::Result<String> {
     let dir = match &id {
         Some(i) => super::task_dir(Path::new("output"), i),
         None => super::latest_task_dir(Path::new("output"))?,
@@ -163,6 +187,6 @@ pub async fn run(id: Option<String>, force_script: bool) -> anyhow::Result<Strin
     let cfg = Config::load(&Config::path())?;
     let llm = PiRpcAgent::new(cfg.tasks.llm.clone().map(|l| l.model))?;
     let backend = podcast::resolve_podcast(&cfg)?;
-    run_with(&dir, &llm, &backend, force_script).await?;
+    run_with(&dir, &llm, &backend, force_script, user_prompt.as_deref()).await?;
     Ok(id)
 }

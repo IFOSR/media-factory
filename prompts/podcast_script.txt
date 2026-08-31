@@ -8,3 +8,5 @@
 
 内容：
 {{TEXT}}
+
+{{USER_PROMPT}}

@@ -7,17 +7,31 @@ use crate::pi_rpc::PiRpcAgent;
 use crate::podcast as podcast_backend;
 use crate::provider;
 
+/// 各步骤的用户自定义 prompt
+pub struct Prompts<'a> {
+    pub rewrite: Option<&'a str>,
+    pub image: Option<&'a str>,
+    pub podcast: Option<&'a str>,
+}
+
 /// 串联执行全部四步：改写 → 生图 → 播客 → 视频。
 /// 任一步失败即停止，可用 `--id <id> <失败子命令>` 续跑。
 pub async fn run(
     input: Option<String>,
     id: Option<String>,
     reference: Option<String>,
-    user_prompt: Option<String>,
+    rewrite_prompt: Option<String>,
+    image_prompt: Option<String>,
+    podcast_prompt: Option<String>,
 ) -> anyhow::Result<String> {
     let cfg = Config::load(&Config::path())?;
     let llm = PiRpcAgent::new(cfg.tasks.llm.clone().map(|l| l.model))?;
     let source = rewrite::read_input(input)?;
+    let prompts = Prompts {
+        rewrite: rewrite_prompt.as_deref(),
+        image: image_prompt.as_deref(),
+        podcast: podcast_prompt.as_deref(),
+    };
     run_with_config(
         Path::new("output"),
         &cfg,
@@ -25,7 +39,7 @@ pub async fn run(
         &source,
         id,
         reference.map(PathBuf::from),
-        user_prompt.as_deref(),
+        &prompts,
     )
     .await
 }
@@ -38,16 +52,16 @@ pub async fn run_with_config(
     source: &str,
     id: Option<String>,
     reference: Option<PathBuf>,
-    user_prompt: Option<&str>,
+    prompts: &Prompts<'_>,
 ) -> anyhow::Result<String> {
-    let id = rewrite::run_with(output_root, source, id, llm, user_prompt).await?;
+    let id = rewrite::run_with(output_root, source, id, llm, prompts.rewrite).await?;
     let dir = output_root.join(&id);
 
     let img_provider = provider::resolve_image(cfg)?;
-    image::run_with(&dir, reference, llm, img_provider.as_ref()).await?;
+    image::run_with(&dir, reference, llm, img_provider.as_ref(), prompts.image).await?;
 
     let backend = podcast_backend::resolve_podcast(cfg)?;
-    podcast::run_with(&dir, llm, &backend, false).await?;
+    podcast::run_with(&dir, llm, &backend, false, prompts.podcast).await?;
 
     video::run_with(&dir)?;
 
@@ -175,7 +189,7 @@ done
         let llm = PiRpcAgent::with_binary(pi_bin, None).unwrap();
         let root = dir.path().join("output");
 
-        run_with_config(&root, &cfg, &llm, "原始参考内容", Some("e2e1".into()), None, None)
+        run_with_config(&root, &cfg, &llm, "原始参考内容", Some("e2e1".into()), None, &Prompts { rewrite: None, image: None, podcast: None })
             .await
             .unwrap();
 

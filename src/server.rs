@@ -37,6 +37,10 @@ struct RunReq {
     id: Option<String>,
     #[serde(default)]
     prompt: Option<String>,
+    #[serde(default)]
+    image_prompt: Option<String>,
+    #[serde(default)]
+    podcast_prompt: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -54,6 +58,8 @@ struct ImageReq {
     id: Option<String>,
     #[serde(default)]
     ref_image: Option<String>,
+    #[serde(default)]
+    prompt: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -63,6 +69,8 @@ struct PodcastReq {
     /// 模式 B：先生成脚本
     #[serde(default)]
     script: bool,
+    #[serde(default)]
+    prompt: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -148,6 +156,11 @@ async fn run_pipeline(State(state): State<AppState>, Json(req): Json<RunReq>) ->
 
 async fn run_pipeline_inner(req: RunReq) -> anyhow::Result<ApiResp> {
     let (cfg, llm) = load_ctx()?;
+    let prompts = cmd::run::Prompts {
+        rewrite: req.prompt.as_deref(),
+        image: req.image_prompt.as_deref(),
+        podcast: req.podcast_prompt.as_deref(),
+    };
     let id = cmd::run::run_with_config(
         Path::new(OUTPUT_ROOT),
         &cfg,
@@ -155,7 +168,7 @@ async fn run_pipeline_inner(req: RunReq) -> anyhow::Result<ApiResp> {
         &req.text,
         req.id,
         req.ref_image.map(PathBuf::from),
-        req.prompt.as_deref(),
+        &prompts,
     )
     .await?;
     Ok(ok(Some(id.clone()), Some("全流程完成".into()), Some(list_artifacts(&id))))
@@ -180,7 +193,7 @@ async fn image(Json(req): Json<ImageReq>) -> Response {
         let (cfg, llm) = load_ctx()?;
         let dir = resolve_dir(req.id)?;
         let provider = provider::resolve_image(&cfg)?;
-        cmd::image::run_with(&dir, req.ref_image.map(PathBuf::from), &llm, provider.as_ref()).await?;
+        cmd::image::run_with(&dir, req.ref_image.map(PathBuf::from), &llm, provider.as_ref(), req.prompt.as_deref()).await?;
         let id = dir_id(&dir);
         Ok(ok(Some(id.clone()), Some("生图完成".into()), Some(list_artifacts(&id))))
     }
@@ -196,7 +209,7 @@ async fn podcast(Json(req): Json<PodcastReq>) -> Response {
         let (cfg, llm) = load_ctx()?;
         let dir = resolve_dir(req.id)?;
         let backend = podcast_backend::resolve_podcast(&cfg)?;
-        cmd::podcast::run_with(&dir, &llm, &backend, req.script).await?;
+        cmd::podcast::run_with(&dir, &llm, &backend, req.script, req.prompt.as_deref()).await?;
         let id = dir_id(&dir);
         Ok(ok(Some(id.clone()), Some("播客完成".into()), Some(list_artifacts(&id))))
     }
