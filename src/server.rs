@@ -284,8 +284,8 @@ async fn download(AxPath((id, name)): AxPath<(String, String)>) -> Response {
 }
 
 /// 参考图上传（multipart，字段名 file），保存到 uploads/，返回绝对路径
-async fn upload(mut multipart: axum::extract::Multipart) -> Response {
-    let result = async {
+/// 参考图上传（multipart，字段名 file），保存到 uploads/，返回绝对路径
+async fn upload(mut multipart: axum::extract::Multipart) -> Response {    let result = async {
         let mut saved: Option<String> = None;
         while let Some(field) = multipart.next_field().await? {
             if field.name() != Some("file") {
@@ -355,6 +355,35 @@ async fn put_config(Json(cfg): Json<Config>) -> Response {
     }
 }
 
+/// 拉取 OpenAI 兼容 provider 的模型列表（GET {base_url}/models）
+async fn fetch_models(Json(req): Json<FetchModelsReq>) -> Response {
+    let result = async {
+        let url = format!("{}/models", req.base_url.trim_end_matches('/'));
+        let client = reqwest::Client::builder().no_proxy().build()?;
+        let resp = client.get(&url).bearer_auth(&req.api_key).send().await?;
+        anyhow::ensure!(resp.status().is_success(),
+            "拉取模型失败: HTTP {} {}", resp.status(), resp.text().await.unwrap_or_default());
+        let v: serde_json::Value = resp.json().await?;
+        let mut models: Vec<String> = v["data"]
+            .as_array()
+            .map(|a| a.iter().filter_map(|m| m["id"].as_str().map(|s| s.to_string())).collect())
+            .unwrap_or_default();
+        models.sort();
+        Ok(Json(json!({"ok": true, "models": models})))
+    }
+    .await;
+    match result {
+        Ok(resp) => resp.into_response(),
+        Err(e) => (StatusCode::BAD_REQUEST, Json(err(e))).into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+struct FetchModelsReq {
+    base_url: String,
+    api_key: String,
+}
+
 pub async fn run(port: u16) -> anyhow::Result<()> {
     let state = AppState { run_lock: Arc::new(Mutex::new(())) };
     let app = Router::new()
@@ -368,6 +397,7 @@ pub async fn run(port: u16) -> anyhow::Result<()> {
         .route("/api/tasks/:id", get(task_info))
         .route("/api/files/:id/:name", get(download))
         .route("/api/upload", post(upload))
+        .route("/api/fetch-models", post(fetch_models))
         .route("/api/config", get(get_config).put(put_config))
         .with_state(state);
 
