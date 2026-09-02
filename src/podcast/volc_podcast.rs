@@ -50,6 +50,14 @@ impl VolcPodcast {
         self.speakers.clone()
     }
 
+    /// 覆盖发音人（用于任务级人数/音色选择）
+    pub fn with_speakers(mut self, speakers: Vec<String>) -> Self {
+        if !speakers.is_empty() {
+            self.speakers = speakers;
+        }
+        self
+    }
+
     /// 把音色 ID 映射成友好称呼
     fn speaker_label(&self, speaker: &str) -> String {
         if self.speakers.len() > 1 && speaker == self.speakers[1] {

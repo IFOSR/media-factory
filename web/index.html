@@ -74,6 +74,9 @@
     font-size:13px; color:var(--muted); cursor:pointer; transition:all .2s; }
   .drop:hover, .drop.on { border-color:var(--amber); color:var(--text); background:var(--amber-soft); }
   .drop.has { color:var(--ok); border-color:var(--ok); }
+  .podset { display:flex; flex-direction:column; gap:6px; }
+  .podset select { width:100%; background:var(--bg2); border:1px solid var(--line); border-radius:8px;
+    color:var(--text); padding:8px 10px; font-size:13px; }
 
   .btns { display:flex; flex-wrap:wrap; gap:8px; margin-top:4px; }
   button { background:var(--amber); color:#1a1408; border:none; border-radius:8px;
@@ -182,6 +185,18 @@
         <textarea id="podcastPrompt" class="small" placeholder="如：轻松幽默，两位主播多互动"></textarea>
       </div>
       <div class="field">
+        <label>播客人数与人物</label>
+        <div class="podset">
+          <select id="speakerCount">
+            <option value="2">2 人（双人对话）</option>
+            <option value="1">1 人（单人播报）</option>
+          </select>
+          <select id="speaker1"></select>
+          <select id="speaker2"></select>
+        </div>
+        <div class="hint">留空音色则用配置默认；仅火山播客 provider 生效。</div>
+      </div>
+      <div class="field">
         <label>参考图（可选）</label>
         <div class="drop" id="drop">点击或拖拽图片上传</div>
         <input type="file" id="file" accept="image/*" hidden>
@@ -279,6 +294,25 @@ function toggleTheme() {
   document.documentElement.setAttribute('data-theme', saved || sys);
 })();
 
+// ===== 播客音色下拉 =====
+const PODCAST_VOICES = [
+  { id:'zh_female_mizaitongxue_v2_saturn_bigtts', label:'黑猫侦探社·咪仔（女）' },
+  { id:'zh_male_dayixiansheng_v2_saturn_bigtts', label:'大医先生（男）' },
+  { id:'zh_male_liufei_v2_saturn_bigtts', label:'刘飞（男）' },
+  { id:'zh_male_xiaolei_v2_saturn_bigtts', label:'潇磊（男）' },
+];
+function voiceOptions() {
+  return '<option value="">默认音色</option>' + PODCAST_VOICES.map(v => `<option value="${v.id}">${v.label}</option>`).join('');
+}
+(function initPodcastSet(){
+  document.getElementById('speaker1').innerHTML = voiceOptions();
+  document.getElementById('speaker2').innerHTML = voiceOptions();
+  const cnt = document.getElementById('speakerCount');
+  cnt.addEventListener('change', () => {
+    document.getElementById('speaker2').style.display = cnt.value === '1' ? 'none' : 'block';
+  });
+})();
+
 // ===== 上传参考图 =====
 const drop = document.getElementById('drop'), fileInput = document.getElementById('file');
 drop.addEventListener('click', () => fileInput.click());
@@ -308,6 +342,10 @@ function newTask() {
   document.getElementById('imagePrompt').value = '';
   document.getElementById('podcastPrompt').value = '';
   document.getElementById('taskId').value = '';
+  document.getElementById('speakerCount').value = '2';
+  document.getElementById('speaker1').value = '';
+  document.getElementById('speaker2').value = '';
+  document.getElementById('speaker2').style.display = 'block';
   document.getElementById('result').innerHTML = '<div class="empty">尚未开始，点击上方「一键全流程」或「仅改写」</div>';
   resetLine();
   setStatus('新任务已就绪，粘贴参考文案后开始');
@@ -340,6 +378,14 @@ async function run(step) {
   if (step === 'image' && imagePrompt) body.prompt = imagePrompt;
   if (step === 'run' && podcastPrompt) body.podcast_prompt = podcastPrompt;
   if (step === 'podcast' && podcastPrompt) body.prompt = podcastPrompt;
+  // 播客人数/音色（任务级参数）
+  if (step === 'run' || step === 'podcast') {
+    body.speaker_count = parseInt(document.getElementById('speakerCount').value) || 2;
+    const s1 = document.getElementById('speaker1').value.trim();
+    const s2 = document.getElementById('speaker2').value.trim();
+    if (s1) body.speaker1 = s1;
+    if (s2 && body.speaker_count === 2) body.speaker2 = s2;
+  }
   if (id) body.id = id;
   else if (state.currentId && step !== 'rewrite' && step !== 'run') body.id = state.currentId;
   if ((step === 'run' || step === 'image') && state.refPath) body.ref_image = state.refPath;
@@ -525,12 +571,6 @@ const PODCAST_BUILTINS = [
   { key:'openai-tts', label:'openai-tts（通用 TTS）' },
   { key:'gemini-tts', label:'gemini-tts（通用 TTS）' },
   { key:'volc-tts', label:'volc-tts（火山豆包语音）', extra:['appid'] },
-];
-const PODCAST_VOICES = [
-  { id:'zh_female_mizaitongxue_v2_saturn_bigtts', label:'黑猫侦探社·咪仔（女）' },
-  { id:'zh_male_dayixiansheng_v2_saturn_bigtts', label:'大医先生（男）' },
-  { id:'zh_male_liufei_v2_saturn_bigtts', label:'刘飞（男）' },
-  { id:'zh_male_xiaolei_v2_saturn_bigtts', label:'潇磊（男）' },
 ];
 let CFG = null, CFG_MODELS = [], PM_KIND = null, PM_PROVIDER = null;
 

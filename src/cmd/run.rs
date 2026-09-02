@@ -44,6 +44,7 @@ pub async fn run(
         reference.map(PathBuf::from),
         &prompts,
         &events,
+        None,
     )
     .await
 }
@@ -59,6 +60,7 @@ pub async fn run_with_config(
     reference: Option<PathBuf>,
     prompts: &Prompts<'_>,
     events: &TaskEvents,
+    podcast_speakers: Option<Vec<String>>,
 ) -> anyhow::Result<String> {
     let id = match rewrite::run_with(output_root, source, id, llm, prompts.rewrite, events).await {
         Ok(id) => id,
@@ -91,6 +93,12 @@ pub async fn run_with_config(
             events.task_error(&e.to_string());
             return Err(e);
         }
+    };
+    let backend = match (backend, podcast_speakers) {
+        (podcast_backend::PodcastBackend::Volc(v), Some(sp)) => {
+            podcast_backend::PodcastBackend::Volc(v.with_speakers(sp))
+        }
+        (b, _) => b,
     };
     if let Err(e) = podcast::run_with(&dir, llm, &backend, false, prompts.podcast, events).await {
         events.step_failed(Step::Podcast, &e.to_string());
@@ -231,7 +239,7 @@ done
         let root = dir.path().join("output");
         let events = crate::task::TaskEvents::local(&root, "e2e1");
 
-        run_with_config(&root, &cfg, &llm, "原始参考内容", "e2e1", None, &Prompts { rewrite: None, image: None, podcast: None }, &events)
+        run_with_config(&root, &cfg, &llm, "原始参考内容", "e2e1", None, &Prompts { rewrite: None, image: None, podcast: None }, &events, None)
             .await
             .unwrap();
 

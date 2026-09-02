@@ -46,6 +46,13 @@ struct RunReq {
     image_prompt: Option<String>,
     #[serde(default)]
     podcast_prompt: Option<String>,
+    // 播客人物/人数（任务级，可覆盖配置默认）
+    #[serde(default)]
+    speaker_count: Option<u32>,
+    #[serde(default)]
+    speaker1: Option<String>,
+    #[serde(default)]
+    speaker2: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -75,6 +82,12 @@ struct PodcastReq {
     script: bool,
     #[serde(default)]
     prompt: Option<String>,
+    #[serde(default)]
+    speaker_count: Option<u32>,
+    #[serde(default)]
+    speaker1: Option<String>,
+    #[serde(default)]
+    speaker2: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -133,6 +146,40 @@ fn dir_id(dir: &Path) -> String {
     dir.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default()
 }
 
+/// 从任务级 speaker 参数构造发音人列表；未提供时返回 None（用配置默认）
+fn build_speakers(count: Option<u32>, s1: Option<String>, s2: Option<String>) -> Option<Vec<String>> {
+    if count.is_none() && s1.is_none() && s2.is_none() {
+        return None;
+    }
+    let n = count.unwrap_or(2).clamp(1, 2) as usize;
+    let mut v = Vec::new();
+    if n >= 1 {
+        if let Some(a) = s1.filter(|s| !s.is_empty()) {
+            v.push(a);
+        }
+    }
+    if n >= 2 {
+        if let Some(b) = s2.filter(|s| !s.is_empty()) {
+            v.push(b);
+        }
+    }
+    if v.is_empty() {
+        None
+    } else {
+        Some(v)
+    }
+}
+
+/// 给播客 backend 应用任务级发音人覆盖
+fn apply_speakers(backend: podcast_backend::PodcastBackend, speakers: Option<Vec<String>>) -> podcast_backend::PodcastBackend {
+    match (backend, speakers) {
+        (podcast_backend::PodcastBackend::Volc(v), Some(sp)) => {
+            podcast_backend::PodcastBackend::Volc(v.with_speakers(sp))
+        }
+        (b, _) => b,
+    }
+}
+
 /// 生成任务 id（改写在时间戳基础上加随机后缀，避免同秒冲突）
 fn gen_id() -> String {
     let ts = chrono::Local::now().format("%Y%m%d-%H%M%S");
@@ -160,6 +207,7 @@ async fn run_pipeline(State(state): State<AppState>, Json(req): Json<RunReq>) ->
             image: req.image_prompt.as_deref(),
             podcast: req.podcast_prompt.as_deref(),
         };
+        let speakers = build_speakers(req.speaker_count, req.speaker1, req.speaker2);
         // run_with_config 内部已处理 task_done / task_error
         let _ = cmd::run::run_with_config(
             Path::new(OUTPUT_ROOT),
@@ -170,6 +218,7 @@ async fn run_pipeline(State(state): State<AppState>, Json(req): Json<RunReq>) ->
             req.ref_image.map(PathBuf::from),
             &prompts,
             &events,
+            speakers,
         )
         .await;
     });
@@ -239,6 +288,8 @@ async fn podcast(State(state): State<AppState>, Json(req): Json<PodcastReq>) -> 
         Ok(b) => b,
         Err(e) => return (StatusCode::BAD_REQUEST, Json(json!({"ok": false, "error": e.to_string()}))).into_response(),
     };
+    let speakers = build_speakers(req.speaker_count, req.speaker1, req.speaker2);
+    let backend = apply_speakers(backend, speakers);
     let events = TaskEvents::streaming(Path::new(OUTPUT_ROOT), &id);
     let lock = state.run_lock.clone();
     tokio::spawn(async move {
