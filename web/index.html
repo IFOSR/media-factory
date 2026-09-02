@@ -99,6 +99,7 @@
   .artifact .cap { font-family:var(--mono); font-size:11px; color:var(--cyan); letter-spacing:.5px; margin-bottom:8px; }
   .artifact textarea, .artifact .txt { width:100%; background:var(--bg2); border:1px solid var(--line);
     border-radius:8px; color:var(--text); padding:12px; font-size:13px; white-space:pre-wrap; max-height:360px; overflow:auto; }
+  .artifact textarea { font-family:inherit; resize:vertical; min-height:120px; }
   .artifact .placeholder { color:var(--muted); font-size:13px; padding:10px 0; }
   video, audio { width:100%; border-radius:8px; outline:none; }
   img.prev { max-width:100%; border-radius:8px; display:block; }
@@ -449,16 +450,40 @@ function handleEvent(ev) {
 
 function stepName(s) { return {rewrite:'改写',image:'生图',podcast:'播客',video:'视频'}[s] || s; }
 
-// 打字机：把完整文本逐字渲染到对应产物面板
+// 打字机：把完整文本逐字渲染到对应产物面板；结束后转成可编辑 textarea
 function typewriter(step, text) {
-  const meta = step === 'rewrite' ? ARTIFACT_META['rewritten.md'] : null;
+  const name = step === 'rewrite' ? 'rewritten.md' : 'script.md';
+  const meta = ARTIFACT_META[name];
   const el = ensureArtifact(step, meta.cap, 'txt');
   el.innerHTML = '';
   let i = 0;
   const timer = setInterval(() => {
     el.textContent = text.slice(0, ++i);
-    if (i >= text.length) clearInterval(timer);
+    if (i >= text.length) {
+      clearInterval(timer);
+      finalizeEditable(el, name);
+    }
   }, 12);
+}
+
+// 把文本展示转成可编辑 textarea + 保存按钮
+function finalizeEditable(box, name) {
+  const text = box.textContent || '';
+  const url = `/api/files/${state.currentId}/${name}`;
+  box.innerHTML = `<div class="cap">${ARTIFACT_META[name].cap} · ${name}（可编辑）</div><textarea class="txt" rows="10"></textarea><button class="ghost" style="margin-top:6px">💾 保存修改</button>`;
+  const ta = box.querySelector('textarea');
+  ta.value = text;
+  box.querySelector('button').onclick = () => saveText(name, url, ta);
+}
+
+async function saveText(name, url, ta) {
+  const content = ta.value;
+  try {
+    const res = await fetch(url, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({content}) });
+    const d = await res.json();
+    if (d.ok) setStatus('✓ 已保存 ' + name + '，后续步骤将基于修改后的内容');
+    else setStatus('保存失败：' + (d.error||'未知'), true);
+  } catch(e){ setStatus('保存失败：' + e.message, true); }
 }
 
 function ensureArtifact(step, cap, kind) {
@@ -493,14 +518,21 @@ function showArtifact(step, name, url) {
   } else if (meta.kind === 'video') {
     box.innerHTML = `<div class="cap">${meta.cap}</div><video controls src="${url}"></video>`;
   } else if (meta.kind === 'text') {
-    // 文本：若已有打字机内容则跳过（避免覆盖），否则 fetch 填充
+    const editable = name.endsWith('.md');
     const existing = box.querySelector('.txt');
     if (!existing) {
-      box.innerHTML = `<div class="cap">${meta.cap}</div><div class="txt placeholder">加载中…</div>`;
-      fetch(url).then(r => r.text()).then(t => {
-        const t2 = box.querySelector('.txt');
-        if (t2 && t2.classList.contains('placeholder')) { t2.textContent = t; t2.classList.remove('placeholder'); }
-      });
+      if (editable) {
+        box.innerHTML = `<div class="cap">${meta.cap} · ${name}（可编辑）</div><textarea class="txt" rows="10"></textarea><button class="ghost" style="margin-top:6px">💾 保存修改</button>`;
+        const ta = box.querySelector('textarea');
+        box.querySelector('button').onclick = () => saveText(name, url, ta);
+        fetch(url).then(r => r.text()).then(t => { ta.value = t; });
+      } else {
+        box.innerHTML = `<div class="cap">${meta.cap}</div><div class="txt placeholder">加载中…</div>`;
+        fetch(url).then(r => r.text()).then(t => {
+          const t2 = box.querySelector('.txt');
+          if (t2 && t2.classList.contains('placeholder')) { t2.textContent = t; t2.classList.remove('placeholder'); }
+        });
+      }
     }
   }
 }

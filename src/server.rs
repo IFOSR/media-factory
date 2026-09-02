@@ -403,6 +403,27 @@ async fn download(AxPath((id, name)): AxPath<(String, String)>) -> Response {
     }
 }
 
+/// 保存文本类中间产物（rewritten.md / script.md / subtitle.srt 等），供用户编辑后写回
+async fn save_file(AxPath((id, name)): AxPath<(String, String)>, Json(req): Json<SaveFileReq>) -> Response {
+    if name.contains("..") || name.contains('/') || name.contains('\\') {
+        return (StatusCode::BAD_REQUEST, Json(json!({"ok": false, "error": "非法文件名"}))).into_response();
+    }
+    let ext = name.rsplit('.').next().unwrap_or("");
+    if !matches!(ext, "md" | "txt" | "srt") {
+        return (StatusCode::BAD_REQUEST, Json(json!({"ok": false, "error": "该文件类型不可编辑"}))).into_response();
+    }
+    let path = Path::new(OUTPUT_ROOT).join(&id).join(&name);
+    match std::fs::write(&path, &req.content) {
+        Ok(()) => Json(json!({"ok": true})).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"ok": false, "error": e.to_string()}))).into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+struct SaveFileReq {
+    content: String,
+}
+
 async fn upload(mut multipart: axum::extract::Multipart) -> Response {
     let result = async {
         let mut saved: Option<String> = None;
@@ -509,7 +530,7 @@ pub async fn run(port: u16) -> anyhow::Result<()> {
         .route("/api/tasks", get(list_tasks))
         .route("/api/tasks/:id", get(task_info))
         .route("/api/tasks/:id/events", get(task_events))
-        .route("/api/files/:id/:name", get(download))
+        .route("/api/files/:id/:name", get(download).put(save_file))
         .route("/api/upload", post(upload))
         .route("/api/fetch-models", post(fetch_models))
         .route("/api/config", get(get_config).put(put_config))
