@@ -39,6 +39,8 @@ enum Commands {
         #[arg(long, action = clap::ArgAction::Append)] r#ref: Vec<String>,
         /// 用户自定义生图要求（叠加在系统提炼要求之上）
         #[arg(long)] prompt: Option<String>,
+        /// 生成后叠加免责声明「以上内容仅代表个人观点。不构成投资建议。」
+        #[arg(long)] disclaimer: bool,
     },
     /// 步骤 3：基于改写文案生成播客
     Podcast {
@@ -64,6 +66,8 @@ enum Commands {
         #[arg(long)] image_prompt: Option<String>,
         /// 用户自定义播客风格要求
         #[arg(long)] podcast_prompt: Option<String>,
+        /// 生成后叠加免责声明「以上内容仅代表个人观点。不构成投资建议。」
+        #[arg(long)] disclaimer: bool,
     },
     /// 启动 Web 服务（功能与 CLI 一致）
     Serve {
@@ -99,8 +103,8 @@ async fn main() -> anyhow::Result<()> {
         Commands::Rewrite { input, id, prompt } => {
             cmd::rewrite::run(input, id, prompt).await?;
         }
-        Commands::Image { id, r#ref, prompt } => {
-            cmd::image::run(id, r#ref, prompt).await?;
+        Commands::Image { id, r#ref, prompt, disclaimer } => {
+            cmd::image::run(id, r#ref, prompt, disclaimer).await?;
         }
         Commands::Podcast { id, script, prompt } => {
             cmd::podcast::run(id, script, prompt).await?;
@@ -108,8 +112,8 @@ async fn main() -> anyhow::Result<()> {
         Commands::Video { id } => {
             cmd::video::run(id)?;
         }
-        Commands::Run { input, id, r#ref, prompt, image_prompt, podcast_prompt } => {
-            cmd::run::run(input, id, r#ref, prompt, image_prompt, podcast_prompt).await?;
+        Commands::Run { input, id, r#ref, prompt, image_prompt, podcast_prompt, disclaimer } => {
+            cmd::run::run(input, id, r#ref, prompt, image_prompt, podcast_prompt, disclaimer).await?;
         }
         Commands::Serve { port } => {
             server::run(port).await?;

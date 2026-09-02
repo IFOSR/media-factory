@@ -23,6 +23,7 @@ pub async fn run(
     rewrite_prompt: Option<String>,
     image_prompt: Option<String>,
     podcast_prompt: Option<String>,
+    disclaimer: bool,
 ) -> anyhow::Result<String> {
     let cfg = Config::load(&Config::path())?;
     let llm = crate::llm::resolve_llm(&cfg)?;
@@ -45,6 +46,7 @@ pub async fn run(
         &prompts,
         &events,
         None,
+        disclaimer,
     )
     .await
 }
@@ -61,6 +63,7 @@ pub async fn run_with_config(
     prompts: &Prompts<'_>,
     events: &TaskEvents,
     podcast_speakers: Option<Vec<String>>,
+    disclaimer: bool,
 ) -> anyhow::Result<String> {
     let id = match rewrite::run_with(output_root, source, id, llm, prompts.rewrite, events).await {
         Ok(id) => id,
@@ -80,7 +83,7 @@ pub async fn run_with_config(
             return Err(e);
         }
     };
-    if let Err(e) = image::run_with(&dir, reference, llm, img_provider.as_ref(), prompts.image, events).await {
+    if let Err(e) = image::run_with(&dir, reference, llm, img_provider.as_ref(), prompts.image, events, disclaimer).await {
         events.step_failed(Step::Image, &e.to_string());
         events.task_error(&e.to_string());
         return Err(e);
@@ -239,7 +242,7 @@ done
         let root = dir.path().join("output");
         let events = crate::task::TaskEvents::local(&root, "e2e1");
 
-        run_with_config(&root, &cfg, &llm, "原始参考内容", "e2e1", vec![], &Prompts { rewrite: None, image: None, podcast: None }, &events, None)
+        run_with_config(&root, &cfg, &llm, "原始参考内容", "e2e1", vec![], &Prompts { rewrite: None, image: None, podcast: None }, &events, None, false)
             .await
             .unwrap();
 

@@ -16,6 +16,77 @@ pub fn ffmpeg_bin() -> PathBuf {
     PathBuf::from("ffmpeg")
 }
 
+fn ffprobe_bin() -> PathBuf {
+    let dir = ffmpeg_bin().parent().map(|p| p.to_path_buf()).unwrap_or_default();
+    let p = dir.join("ffprobe");
+    if p.exists() {
+        p
+    } else {
+        PathBuf::from("ffprobe")
+    }
+}
+
+/// 探测可用的中文字体（用于 drawtext 叠加免责声明）
+fn find_cjk_font() -> Option<PathBuf> {
+    const CANDIDATES: &[&str] = &[
+        "/System/Library/Fonts/PingFang.ttc",
+        "/System/Library/Fonts/Hiragino Sans GB.ttc",
+        "/System/Library/Fonts/STHeiti Light.ttc",
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+    ];
+    CANDIDATES.iter().map(PathBuf::from).find(|p| p.exists())
+}
+
+/// 探测图片宽度（像素），用于按宽度自适应免责声明字号
+fn probe_image_width(image: &Path) -> Option<u32> {
+    let out = Command::new(ffprobe_bin())
+        .args(["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width", "-of", "csv=p=0"])
+        .arg(image)
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    String::from_utf8_lossy(&out.stdout).trim().parse().ok()
+}
+
+/// 在图片底部叠加免责声明文字（白字 + 半透明黑底条，居中）；输出写入 out
+pub fn overlay_disclaimer(image: &Path, text: &str, out: &Path) -> anyhow::Result<()> {
+    let font = find_cjk_font()
+        .ok_or_else(|| anyhow::anyhow!("未找到中文字体，无法在图片上叠加免责声明"))?;
+    // 文字写入临时文件，避免 drawtext 参数转义问题
+    let textfile = out.with_extension("disclaimer.txt");
+    std::fs::write(&textfile, text)?;
+
+    let width = probe_image_width(image).unwrap_or(1024);
+    let fontsize = (width / 26).clamp(28, 96);
+    let border = (fontsize / 3).max(8);
+    let margin_bottom = fontsize * 2;
+
+    // 路径转义：drawtext 参数用单引号包裹，内部转义冒号与单引号
+    let esc = |s: &str| s.replace(':', "\\:").replace('\'', "\\'");
+    let vf = format!(
+        "drawtext=fontfile='{}':textfile='{}':fontcolor=white:fontsize={}:box=1:boxcolor=black@0.55:boxborderw={}:x=(w-text_w)/2:y=h-text_h-{}",
+        esc(&font.to_string_lossy()),
+        esc(&textfile.to_string_lossy()),
+        fontsize,
+        border,
+        margin_bottom,
+    );
+
+    let status = Command::new(ffmpeg_bin())
+        .args(["-y", "-i"])
+        .arg(image)
+        .args(["-vf", &vf, "-frames:v", "1"])
+        .arg(out)
+        .status()?;
+    anyhow::ensure!(status.success(), "ffmpeg 叠加免责声明失败");
+    let _ = std::fs::remove_file(&textfile);
+    Ok(())
+}
+
 pub fn require_ffmpeg() -> anyhow::Result<()> {
     let ok = Command::new(ffmpeg_bin()).arg("-version").output().is_ok();
     anyhow::ensure!(ok, "未找到 ffmpeg，请先安装（brew install ffmpeg / apt install ffmpeg）");

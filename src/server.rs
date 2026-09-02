@@ -53,6 +53,9 @@ struct RunReq {
     speaker1: Option<String>,
     #[serde(default)]
     speaker2: Option<String>,
+    // 生图后叠加免责声明
+    #[serde(default)]
+    disclaimer: bool,
 }
 
 #[derive(Deserialize)]
@@ -72,6 +75,8 @@ struct ImageReq {
     ref_images: Vec<String>,
     #[serde(default)]
     prompt: Option<String>,
+    #[serde(default)]
+    disclaimer: bool,
 }
 
 #[derive(Deserialize)]
@@ -219,6 +224,7 @@ async fn run_pipeline(State(state): State<AppState>, Json(req): Json<RunReq>) ->
             &prompts,
             &events,
             speakers,
+            req.disclaimer,
         )
         .await;
     });
@@ -265,7 +271,7 @@ async fn image(State(state): State<AppState>, Json(req): Json<ImageReq>) -> Resp
     let lock = state.run_lock.clone();
     tokio::spawn(async move {
         let _guard = lock.lock().await;
-        let r = cmd::image::run_with(&dir, req.ref_images.into_iter().map(PathBuf::from).collect(), llm.as_ref(), provider.as_ref(), req.prompt.as_deref(), &events).await;
+        let r = cmd::image::run_with(&dir, req.ref_images.into_iter().map(PathBuf::from).collect(), llm.as_ref(), provider.as_ref(), req.prompt.as_deref(), &events, req.disclaimer).await;
         match r {
             Ok(_) => events.task_done(),
             Err(e) => events.task_error(&e.to_string()),
