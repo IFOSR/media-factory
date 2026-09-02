@@ -8,6 +8,7 @@ mod pi_rpc;
 mod podcast;
 mod provider;
 mod server;
+mod task;
 mod tts;
 mod wizard;
 

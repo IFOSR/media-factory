@@ -4,6 +4,7 @@ use crate::config::{BuiltinKind, Config, ProviderConfig};
 pub trait LlmAgent: Send + Sync {
     /// 单轮无状态问答：发送 prompt，返回最终 assistant 文本
     async fn complete(&self, prompt: &str) -> anyhow::Result<String>;
+
 }
 
 /// OpenAI 兼容 /chat/completions 语言模型（Deepseek / OpenAI / Gemini 等 openai-compatible 自定义）

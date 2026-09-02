@@ -2,8 +2,8 @@ use std::path::{Path, PathBuf};
 
 use crate::config::Config;
 use crate::llm::LlmAgent;
-
 use crate::provider::{self, ImageProvider, ImageRequest};
+use crate::task::{Step, TaskEvents};
 
 /// 读取图像 prompt 模板：优先运行时读 cwd/prompts/image_prompt.txt，缺失用嵌入默认。
 fn image_prompt_template() -> String {
@@ -39,6 +39,7 @@ pub async fn run_with(
     llm: &dyn LlmAgent,
     provider: &dyn ImageProvider,
     user_prompt: Option<&str>,
+    events: &TaskEvents,
 ) -> anyhow::Result<()> {
     let rewritten_path = dir.join("rewritten.md");
     anyhow::ensure!(
@@ -48,6 +49,7 @@ pub async fn run_with(
     );
 
     let text = std::fs::read_to_string(&rewritten_path)?;
+    events.step_running(Step::Image);
     let img_prompt = distill_prompt(llm, &text, user_prompt).await?;
     println!("图像 prompt: {}", img_prompt);
 
@@ -65,6 +67,8 @@ pub async fn run_with(
 
     let out = dir.join("image.png");
     std::fs::write(&out, bytes)?;
+    events.artifact(Step::Image, "image.png");
+    events.step_done(Step::Image);
     println!("✓ 生图完成: {}", out.display());
     Ok(())
 }
@@ -87,6 +91,7 @@ pub async fn run(
     let cfg = Config::load(&Config::path())?;
     let llm = crate::llm::resolve_llm(&cfg)?;
     let provider = provider::resolve_image(&cfg)?;
-    run_with(&dir, reference, llm.as_ref(), provider.as_ref(), user_prompt.as_deref()).await?;
+    let events = crate::task::TaskEvents::local(Path::new("output"), &id);
+    run_with(&dir, reference, llm.as_ref(), provider.as_ref(), user_prompt.as_deref(), &events).await?;
     Ok(id)
 }

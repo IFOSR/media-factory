@@ -1,150 +1,147 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="dark">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Media Factory · 内容工厂</title>
 <style>
   :root {
-    --ink: #14161d;         /* 深墨蓝底 */
-    --ink-2: #1b1e27;
-    --panel: #1e212b;
-    --line: #2c303c;
-    --text: #e8e6e1;        /* 暖白 */
-    --muted: #8a8f9e;
-    --amber: #e8a33d;       /* 主色：摄影棚暖光 */
-    --amber-soft: rgba(232,163,61,.14);
-    --cyan: #4aa8c0;        /* 副色：音频电平 */
-    --ok: #67b87d;
-    --err: #e0655a;
-    --mono: "SF Mono", "JetBrains Mono", "Menlo", monospace;
-    --sans: -apple-system, "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", sans-serif;
+    --bg:#14161d; --bg2:#1b1e27; --panel:#1e212b; --line:#2c303c;
+    --text:#e8e6e1; --muted:#8a8f9e;
+    --amber:#e8a33d; --amber-soft:rgba(232,163,61,.14);
+    --cyan:#4aa8c0; --ok:#67b87d; --err:#e0655a;
+    --running:#5aa7ff; --running-soft:rgba(90,167,255,.15);
+    --mono:"SF Mono","JetBrains Mono","Menlo",monospace;
+    --sans:-apple-system,"PingFang SC","Hiragino Sans GB","Noto Sans SC",sans-serif;
   }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  html { scroll-behavior: smooth; }
+  [data-theme="light"] {
+    --bg:#f5f4f0; --bg2:#ffffff; --panel:#ffffff; --line:#e2e0da;
+    --text:#23262d; --muted:#6b7280;
+    --amber:#b8771d; --amber-soft:rgba(184,119,29,.12);
+    --cyan:#22748a; --ok:#3d9a58; --err:#c94a3d;
+    --running:#2f6fd6; --running-soft:rgba(47,111,214,.12);
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html { scroll-behavior:smooth; }
   body {
-    background: var(--ink); color: var(--text);
-    font-family: var(--sans); line-height: 1.6;
-    padding: 28px 32px 60px; min-height: 100vh;
+    background:var(--bg); color:var(--text); font-family:var(--sans);
+    line-height:1.6; padding:26px 30px 60px; min-height:100vh;
+    transition:background .3s,color .3s;
   }
-  .topbar { display: flex; align-items: baseline; gap: 14px; margin-bottom: 22px; }
-  .topbar h1 { font-size: 22px; letter-spacing: .5px; font-weight: 650; }
-  .topbar .brand { color: var(--amber); font-family: var(--mono); font-size: 22px; }
-  .topbar .sub { color: var(--muted); font-size: 13px; }
-  .topbar .spacer { flex: 1; }
-  .iconbtn { background: transparent; border: 1px solid var(--line); color: var(--text);
-    border-radius: 8px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
-  .iconbtn:hover { border-color: var(--amber); color: var(--amber); }
+  .topbar { display:flex; align-items:center; gap:12px; margin-bottom:20px; }
+  .topbar .brand { color:var(--amber); font-family:var(--mono); font-size:22px; }
+  .topbar h1 { font-size:20px; font-weight:650; letter-spacing:.5px; }
+  .topbar .sub { color:var(--muted); font-size:13px; }
+  .topbar .spacer { flex:1; }
+  .iconbtn { background:transparent; border:1px solid var(--line); color:var(--text);
+    border-radius:8px; padding:6px 12px; font-size:13px; cursor:pointer; }
+  .iconbtn:hover { border-color:var(--amber); color:var(--amber); }
 
-  /* 生产线 —— 签名元素 */
-  .line { display: flex; align-items: stretch; gap: 0; margin-bottom: 26px; }
-  .station { flex: 1; position: relative; background: var(--panel); border: 1px solid var(--line);
-    border-radius: 10px; padding: 13px 14px; cursor: pointer; transition: border-color .2s, transform .15s; }
-  .station + .station { margin-left: 10px; }
-  .station:hover { border-color: var(--amber); transform: translateY(-1px); }
-  .station.done { border-color: rgba(232,163,61,.5); }
-  .station .num { font-family: var(--mono); font-size: 11px; color: var(--amber); letter-spacing: 1px; }
-  .station .name { font-size: 14px; margin-top: 2px; font-weight: 600; }
-  .station .desc { font-size: 11px; color: var(--muted); margin-top: 1px; }
-  .station .dot { position: absolute; top: 13px; right: 14px; width: 7px; height: 7px; border-radius: 50%;
-    background: var(--line); transition: background .3s; }
-  .station.done .dot { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
+  /* 生产线 */
+  .line { display:flex; gap:10px; margin-bottom:22px; }
+  .station { flex:1; background:var(--panel); border:1px solid var(--line); border-radius:10px;
+    padding:12px 14px; position:relative; transition:border-color .2s,transform .15s; }
+  .station:hover { border-color:var(--amber); transform:translateY(-1px); }
+  .station.done { border-color:var(--amber); }
+  .station.running { border-color:var(--running); }
+  .station.failed { border-color:var(--err); }
+  .station .num { font-family:var(--mono); font-size:11px; color:var(--amber); letter-spacing:1px; }
+  .station .name { font-size:14px; margin-top:2px; font-weight:600; }
+  .station .desc { font-size:11px; color:var(--muted); margin-top:1px; }
+  .station .dot { position:absolute; top:13px; right:14px; width:7px; height:7px; border-radius:50%;
+    background:var(--line); transition:background .3s; }
+  .station.done .dot { background:var(--amber); box-shadow:0 0 8px var(--amber); }
+  .station.running .dot { background:var(--running); animation:breathe 1.2s ease-in-out infinite; }
+  .station.failed .dot { background:var(--err); }
+  @keyframes breathe { 0%,100%{opacity:.4;transform:scale(.85)} 50%{opacity:1;transform:scale(1.15)} }
 
-  .grid { display: grid; grid-template-columns: 400px 1fr; gap: 22px; align-items: start; }
-  @media (max-width: 980px) { .grid { grid-template-columns: 1fr; } }
+  .grid { display:grid; grid-template-columns:400px 1fr; gap:22px; align-items:start; }
+  @media (max-width:980px){ .grid { grid-template-columns:1fr; } }
 
-  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px; }
-  .panel h2 { font-size: 14px; margin-bottom: 14px; font-weight: 600; letter-spacing: .3px; }
-  .panel h2::before { content: "// "; color: var(--amber); font-family: var(--mono); }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:20px; }
+  .panel h2 { font-size:14px; margin-bottom:14px; font-weight:600; letter-spacing:.3px; }
+  .panel h2::before { content:"// "; color:var(--amber); font-family:var(--mono); }
 
-  .field { margin-bottom: 14px; }
-  .field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 5px; }
-  textarea, input[type=text] {
-    width: 100%; background: var(--ink-2); border: 1px solid var(--line);
-    border-radius: 8px; color: var(--text); padding: 11px 12px; font-size: 14px; font-family: inherit;
-    transition: border-color .2s;
-  }
-  textarea:focus, input:focus { outline: none; border-color: var(--amber); }
-  textarea { min-height: 150px; resize: vertical; }
+  .field { margin-bottom:13px; }
+  .field label { display:block; font-size:12px; color:var(--muted); margin-bottom:5px; }
+  textarea, input[type=text] { width:100%; background:var(--bg2); border:1px solid var(--line);
+    border-radius:8px; color:var(--text); padding:10px 12px; font-size:14px; font-family:inherit; transition:border-color .2s; }
+  textarea:focus, input:focus { outline:none; border-color:var(--amber); }
+  textarea { min-height:120px; resize:vertical; }
+  textarea.small { min-height:54px; }
 
-  .drop { border: 1.5px dashed var(--line); border-radius: 8px; padding: 14px; text-align: center;
-    font-size: 13px; color: var(--muted); cursor: pointer; transition: all .2s; }
-  .drop:hover, .drop.on { border-color: var(--amber); color: var(--text); background: var(--amber-soft); }
-  .drop.has { color: var(--ok); border-color: var(--ok); }
+  .drop { border:1.5px dashed var(--line); border-radius:8px; padding:12px; text-align:center;
+    font-size:13px; color:var(--muted); cursor:pointer; transition:all .2s; }
+  .drop:hover, .drop.on { border-color:var(--amber); color:var(--text); background:var(--amber-soft); }
+  .drop.has { color:var(--ok); border-color:var(--ok); }
 
-  .btns { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
-  button {
-    background: var(--amber); color: #1a1408; border: none; border-radius: 8px;
-    padding: 10px 18px; font-size: 14px; font-weight: 600; cursor: pointer; transition: filter .15s, transform .1s;
-  }
-  button:hover { filter: brightness(1.08); }
-  button:active { transform: translateY(1px); }
-  button:disabled { opacity: .45; cursor: not-allowed; }
-  button.ghost { background: transparent; border: 1px solid var(--line); color: var(--text); font-weight: 500; }
+  .btns { display:flex; flex-wrap:wrap; gap:8px; margin-top:4px; }
+  button { background:var(--amber); color:#1a1408; border:none; border-radius:8px;
+    padding:10px 16px; font-size:14px; font-weight:600; cursor:pointer; transition:filter .15s,transform .1s; }
+  button:hover { filter:brightness(1.08); }
+  button:active { transform:translateY(1px); }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  button.ghost { background:transparent; border:1px solid var(--line); color:var(--text); font-weight:500; }
 
-  #status { margin-top: 14px; font-size: 13px; color: var(--muted); white-space: pre-wrap; min-height: 20px; }
-  #status.ok { color: var(--ok); }
-  #status.err { color: var(--err); }
-  .spin { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--line);
-    border-top-color: var(--amber); border-radius: 50%; animation: r .8s linear infinite; vertical-align: -1px; margin-right: 6px; }
-  @keyframes r { to { transform: rotate(360deg); } }
+  #status { margin-top:12px; font-size:13px; color:var(--muted); white-space:pre-wrap; min-height:20px; }
+  #status.err { color:var(--err); }
+  .spin { display:inline-block; width:12px; height:12px; border:2px solid var(--line);
+    border-top-color:var(--amber); border-radius:50%; animation:r .8s linear infinite; vertical-align:-1px; margin-right:6px; }
+  @keyframes r { to { transform:rotate(360deg); } }
 
-  /* 结果区 */
-  .artifact { border-top: 1px solid var(--line); padding: 14px 0; }
-  .artifact:first-child { border-top: none; padding-top: 0; }
-  .artifact .cap { font-family: var(--mono); font-size: 11px; color: var(--cyan); letter-spacing: .5px; margin-bottom: 8px; }
-  .artifact textarea, .artifact pre { width: 100%; background: var(--ink-2); border: 1px solid var(--line);
-    border-radius: 8px; color: var(--text); padding: 12px; font-size: 13px; white-space: pre-wrap; max-height: 360px; overflow: auto; }
-  video, audio { width: 100%; border-radius: 8px; outline: none; }
-  img.prev { max-width: 100%; border-radius: 8px; display: block; }
+  /* 产物面板 */
+  .artifact { border-top:1px solid var(--line); padding:14px 0; animation:slideIn .3s ease; }
+  .artifact:first-child { border-top:none; padding-top:0; }
+  @keyframes slideIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
+  .artifact .cap { font-family:var(--mono); font-size:11px; color:var(--cyan); letter-spacing:.5px; margin-bottom:8px; }
+  .artifact textarea, .artifact .txt { width:100%; background:var(--bg2); border:1px solid var(--line);
+    border-radius:8px; color:var(--text); padding:12px; font-size:13px; white-space:pre-wrap; max-height:360px; overflow:auto; }
+  .artifact .placeholder { color:var(--muted); font-size:13px; padding:10px 0; }
+  video, audio { width:100%; border-radius:8px; outline:none; }
+  img.prev { max-width:100%; border-radius:8px; display:block; }
 
   /* 任务列表 */
-  .task { border: 1px solid var(--line); border-radius: 10px; margin-bottom: 10px; overflow: hidden; }
-  .task-head { display: flex; align-items: center; justify-content: space-between; gap: 10px;
-    padding: 12px 14px; cursor: pointer; transition: background .15s; }
-  .task-head:hover { background: var(--ink-2); }
-  .task-head .tid { font-family: var(--mono); font-size: 13px; color: var(--text); }
-  .task-head .meta { font-size: 11px; color: var(--muted); }
-  .task-head .chev { color: var(--muted); transition: transform .2s; font-size: 12px; }
-  .task.open .chev { transform: rotate(90deg); }
-  .task-body { display: none; padding: 4px 14px 14px; border-top: 1px solid var(--line); background: var(--ink-2); }
-  .task.open .task-body { display: block; }
-  .task-body .mini-links { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
-  .task-body .mini-links a { color: var(--cyan); text-decoration: none; font-size: 12px; font-family: var(--mono); }
-  .task-body .mini-links a:hover { text-decoration: underline; }
-  .empty { color: var(--muted); font-size: 13px; text-align: center; padding: 20px 0; }
+  .task { border:1px solid var(--line); border-radius:10px; margin-bottom:10px; overflow:hidden; }
+  .task-head { display:flex; align-items:center; gap:10px; padding:12px 14px; cursor:pointer; transition:background .15s; }
+  .task-head:hover { background:var(--bg2); }
+  .task-head .st { width:9px; height:9px; border-radius:50%; flex-shrink:0; }
+  .st.done { background:var(--ok); } .st.running { background:var(--running); animation:breathe 1.2s infinite; }
+  .st.failed { background:var(--err); } .st.pending { background:var(--muted); } .st.unknown { background:var(--line); }
+  .task-head .tid { font-family:var(--mono); font-size:13px; flex-shrink:0; }
+  .task-head .step { font-size:12px; color:var(--muted); flex:1; }
+  .task-head .chev { color:var(--muted); font-size:12px; transition:transform .2s; }
+  .task.open .chev { transform:rotate(90deg); }
+  .task-body { display:none; padding:4px 14px 14px; border-top:1px solid var(--line); background:var(--bg2); }
+  .task.open .task-body { display:block; }
+  .empty { color:var(--muted); font-size:13px; text-align:center; padding:24px 0; }
 
-  /* 配置弹窗 */
-  .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); backdrop-filter: blur(3px);
-    display: none; align-items: center; justify-content: center; z-index: 50; padding: 20px; }
-  .overlay.show { display: flex; }
-  .cfg-modal { background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
-    width: 560px; max-width: 100%; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; }
-  .cfg-head { display: flex; justify-content: space-between; align-items: center;
-    padding: 16px 20px; border-bottom: 1px solid var(--line); font-size: 15px; font-weight: 600; }
-  .cfg-head .x { background: none; border: none; color: var(--muted); font-size: 20px; cursor: pointer; }
-  .cfg-body { padding: 18px 20px; overflow-y: auto; }
-  .cfg-body section { margin-bottom: 20px; }
-  .cfg-body section h3 { font-size: 13px; margin-bottom: 10px; color: var(--text); }
-  .cfg-body section h3::before { content: "// "; color: var(--amber); font-family: var(--mono); }
-  .cfg-body select { width: 100%; background: var(--ink-2); border: 1px solid var(--line);
-    border-radius: 8px; color: var(--text); padding: 9px 10px; font-size: 13px; margin-bottom: 8px; }
-  .cfg-body .row { display: flex; gap: 8px; margin-bottom: 8px; }
-  .cfg-body .row input { flex: 1; }
-  .cfg-foot { padding: 14px 20px; border-top: 1px solid var(--line); display: flex; justify-content: flex-end; gap: 8px; }
-  .custom-item { display: flex; align-items: center; justify-content: space-between; gap: 8px;
-    background: var(--ink-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; margin-bottom: 6px; font-size: 13px; }
-  .custom-item .del { background: none; border: none; color: var(--err); cursor: pointer; font-size: 13px; }
-  .hint { font-size: 11px; color: var(--muted); margin-top: 4px; }
-  .prov-row { display: flex; gap: 8px; }
-  .prov-row select { flex: 1; margin-bottom: 0; }
-  .cfg-current { display: flex; align-items: center; background: var(--ink-2); border: 1px solid var(--line);
-    border-radius: 8px; padding: 9px 12px; margin-bottom: 8px; font-size: 13px; }
-  .cfg-current::before { content: "● "; color: var(--cyan); font-size: 11px; }
-  .custom-form { margin-top: 10px; background: var(--ink-2); border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
-  .custom-form .row { margin-bottom: 8px; }
-  .custom-form .row:last-of-type { margin-bottom: 10px; }
-  .prov-label { font-size: 12px; color: var(--cyanish, var(--cyan)); margin-bottom: 6px; font-family: var(--mono); }
+  /* 弹窗 */
+  .overlay { position:fixed; inset:0; background:rgba(0,0,0,.55); backdrop-filter:blur(3px);
+    display:none; align-items:center; justify-content:center; z-index:50; padding:20px; }
+  .overlay.show { display:flex; }
+  .cfg-modal { background:var(--panel); border:1px solid var(--line); border-radius:14px;
+    width:560px; max-width:100%; max-height:90vh; display:flex; flex-direction:column; overflow:hidden; }
+  .cfg-head { display:flex; justify-content:space-between; align-items:center; padding:16px 20px;
+    border-bottom:1px solid var(--line); font-size:15px; font-weight:600; }
+  .cfg-head .x { background:none; border:none; color:var(--muted); font-size:20px; cursor:pointer; }
+  .cfg-body { padding:18px 20px; overflow-y:auto; }
+  .cfg-body section { margin-bottom:20px; }
+  .cfg-body section h3 { font-size:13px; margin-bottom:10px; }
+  .cfg-body section h3::before { content:"// "; color:var(--amber); font-family:var(--mono); }
+  .cfg-body select { width:100%; background:var(--bg2); border:1px solid var(--line);
+    border-radius:8px; color:var(--text); padding:9px 10px; font-size:13px; margin-bottom:8px; }
+  .cfg-body .row { display:flex; gap:8px; margin-bottom:8px; }
+  .cfg-body .row input { flex:1; }
+  .cfg-foot { padding:14px 20px; border-top:1px solid var(--line); display:flex; justify-content:flex-end; gap:8px; }
+  .custom-item { display:flex; align-items:center; justify-content:space-between; gap:8px;
+    background:var(--bg2); border:1px solid var(--line); border-radius:8px; padding:8px 12px; margin-bottom:6px; font-size:13px; }
+  .custom-item .del { background:none; border:none; color:var(--err); cursor:pointer; font-size:13px; }
+  .hint { font-size:11px; color:var(--muted); margin-top:4px; }
+  .cfg-current { display:flex; align-items:center; background:var(--bg2); border:1px solid var(--line);
+    border-radius:8px; padding:9px 12px; margin-bottom:8px; font-size:13px; }
+  .cfg-current::before { content:"● "; color:var(--cyan); font-size:11px; }
+  .custom-form { margin-top:10px; background:var(--bg2); border:1px solid var(--line); border-radius:8px; padding:12px; }
+  .custom-form .row { margin-bottom:8px; }
 </style>
 </head>
 <body>
@@ -153,26 +150,15 @@
     <h1>Media Factory</h1>
     <span class="sub">自媒体内容生产线：改写 · 生图 · 播客 · 视频（含字幕）</span>
     <span class="spacer"></span>
+    <button class="iconbtn" onclick="toggleTheme()">🌓 主题</button>
     <button class="iconbtn" onclick="openConfig()">⚙ 配置</button>
   </div>
 
-  <div class="line">
-    <div class="station" data-step="rewrite" onclick="run('rewrite')">
-      <span class="num">STEP 01</span><span class="dot"></span>
-      <div class="name">改写</div><div class="desc">爆款文案</div>
-    </div>
-    <div class="station" data-step="image" onclick="run('image')">
-      <span class="num">STEP 02</span><span class="dot"></span>
-      <div class="name">生图</div><div class="desc">核心意象配图</div>
-    </div>
-    <div class="station" data-step="podcast" onclick="run('podcast')">
-      <span class="num">STEP 03</span><span class="dot"></span>
-      <div class="name">播客</div><div class="desc">双人对话音频</div>
-    </div>
-    <div class="station" data-step="video" onclick="run('video')">
-      <span class="num">STEP 04</span><span class="dot"></span>
-      <div class="name">视频</div><div class="desc">图片 + 音频 + 字幕</div>
-    </div>
+  <div class="line" id="line">
+    <div class="station" data-step="rewrite"><span class="num">STEP 01</span><span class="dot"></span><div class="name">改写</div><div class="desc">爆款文案</div></div>
+    <div class="station" data-step="image"><span class="num">STEP 02</span><span class="dot"></span><div class="name">生图</div><div class="desc">核心意象配图</div></div>
+    <div class="station" data-step="podcast"><span class="num">STEP 03</span><span class="dot"></span><div class="name">播客</div><div class="desc">双人对话音频</div></div>
+    <div class="station" data-step="video"><span class="num">STEP 04</span><span class="dot"></span><div class="name">视频</div><div class="desc">图片 + 音频 + 字幕</div></div>
   </div>
 
   <div class="grid">
@@ -184,27 +170,27 @@
       </div>
       <div class="field">
         <label>改写要求（可选，叠加在系统爆款要求之上）</label>
-        <textarea id="prompt" style="min-height:60px" placeholder="如：面向小红书，语气活泼，多用 emoji，500 字左右"></textarea>
+        <textarea id="prompt" class="small" placeholder="如：面向小红书，语气活泼，500 字左右"></textarea>
       </div>
       <div class="field">
-        <label>生图要求（可选，如画面风格/配色）</label>
-        <textarea id="imagePrompt" style="min-height:50px" placeholder="如：扁平插画风，暖色调，扁平化构图"></textarea>
+        <label>生图要求（可选）</label>
+        <textarea id="imagePrompt" class="small" placeholder="如：扁平插画风，暖色调"></textarea>
       </div>
       <div class="field">
         <label>播客风格要求（可选）</label>
-        <textarea id="podcastPrompt" style="min-height:50px" placeholder="如：轻松幽默，两位主播多互动"></textarea>
+        <textarea id="podcastPrompt" class="small" placeholder="如：轻松幽默，两位主播多互动"></textarea>
       </div>
       <div class="field">
-        <label>参考图（可选，作为生图参考）</label>
-        <div class="drop" id="drop">点击或拖拽图片到这里上传</div>
+        <label>参考图（可选）</label>
+        <div class="drop" id="drop">点击或拖拽图片上传</div>
         <input type="file" id="file" accept="image/*" hidden>
       </div>
       <div class="field">
-        <label>任务 ID（可选，留空自动生成；续跑时填已有任务）</label>
+        <label>任务 ID（可选，留空自动生成）</label>
         <input type="text" id="taskId" placeholder="如 20260830-171442">
       </div>
       <div class="btns">
-        <button onclick="run('run')">一键全流程</button>
+        <button onclick="run('run')">🚀 一键全流程</button>
         <button class="ghost" onclick="run('rewrite')">仅改写</button>
         <button class="ghost" onclick="run('image')">仅生图</button>
         <button class="ghost" onclick="run('podcast')">仅播客</button>
@@ -214,430 +200,33 @@
     </div>
 
     <div class="panel">
-      <h2>最新产出</h2>
-      <div id="result"><div class="empty">尚未产出，点击上方「一键全流程」开始</div></div>
+      <h2>实时产出</h2>
+      <div id="result"><div class="empty">尚未开始，点击上方「一键全流程」或「仅改写」</div></div>
       <h2 style="margin-top:22px">任务档案</h2>
       <div id="tasks"></div>
     </div>
   </div>
 
-<script>
-const state = { refPath: null, fileName: null, currentId: null };
-const drop = document.getElementById('drop');
-const fileInput = document.getElementById('file');
-
-drop.addEventListener('click', () => fileInput.click());
-['dragover','dragenter'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('on'); }));
-['dragleave','drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('on'); }));
-drop.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) upload(f); });
-fileInput.addEventListener('change', () => { const f = fileInput.files[0]; if (f) upload(f); });
-
-async function upload(file) {
-  setStatus('上传中…');
-  const fd = new FormData();
-  fd.append('file', file);
-  try {
-    const res = await fetch('/api/upload', { method: 'POST', body: fd });
-    const data = await res.json();
-    if (data.ok) {
-      state.refPath = data.path; state.fileName = file.name;
-      drop.textContent = '✓ ' + file.name; drop.classList.add('has');
-      setStatus('参考图已上传');
-    } else { setStatus('上传失败：' + data.error, true); }
-  } catch (e) { setStatus('上传失败：' + e.message, true); }
-}
-
-function setStatus(msg, isErr) {
-  const el = document.getElementById('status');
-  el.className = isErr ? 'err' : '';
-  el.innerHTML = msg;
-}
-
-async function run(step) {
-  const text = document.getElementById('text').value.trim();
-  const prompt = document.getElementById('prompt').value.trim();
-  const imagePrompt = document.getElementById('imagePrompt').value.trim();
-  const podcastPrompt = document.getElementById('podcastPrompt').value.trim();
-  const id = document.getElementById('taskId').value.trim() || null;
-  const status = document.getElementById('status');
-  if (step === 'run' || step === 'rewrite') { if (!text) { setStatus('请先填写参考文案', true); return; } }
-  if (step === 'run' || step === 'image' || step === 'video' || step === 'podcast') {
-    if (!id && !state.currentId && !(step === 'rewrite' || step === 'run')) { setStatus('续跑需要任务 ID（先跑过改写/全流程，或手动填写）', true); return; }
-  }
-
-  setStatus('<span class="spin"></span>' + (step === 'video' ? '视频合成含字幕，可能需要 10–20 分钟，请耐心等待…' : '处理中…'));
-  const body = {};
-  if (step === 'run' || step === 'rewrite') body.text = text;
-  if ((step === 'run' || step === 'rewrite') && prompt) body.prompt = prompt;
-  if (step === 'run' && imagePrompt) body.image_prompt = imagePrompt;
-  if (step === 'image' && imagePrompt) body.prompt = imagePrompt;
-  if (step === 'run' && podcastPrompt) body.podcast_prompt = podcastPrompt;
-  if (step === 'podcast' && podcastPrompt) body.prompt = podcastPrompt;
-  if (id) body.id = id; else if (state.currentId && step !== 'rewrite' && step !== 'run') body.id = state.currentId;
-  if ((step === 'run' || step === 'image') && state.refPath) body.ref_image = state.refPath;
-
-  try {
-    const res = await fetch('/api/' + step, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
-    const data = await res.json();
-    if (data.ok) {
-      if (data.id) { state.currentId = data.id; document.getElementById('taskId').value = data.id; }
-      setStatus('✓ ' + (data.message || '完成'));
-      renderResult(data);
-      markDone(step);
-      loadTasks();
-    } else { setStatus('出错：' + (data.error || '未知'), true); }
-  } catch (e) { setStatus('请求失败：' + e.message, true); }
-}
-
-function markDone(step) {
-  const order = ['rewrite','image','podcast','video'];
-  const idx = order.indexOf(step);
-  order.forEach((s, i) => {
-    const st = document.querySelector(`.station[data-step="${s}"]`);
-    if (i <= idx) st.classList.add('done');
-  });
-}
-
-function renderResult(data) {
-  const id = data.id;
-  const el = document.getElementById('result');
-  el.innerHTML = '';
-  const names = (data.artifacts || []).map(a => a.name);
-  // 改写文案
-  if (names.includes('rewritten.md')) {
-    el.appendChild(block('改写文案', 'textarea', id, 'rewritten.md'));
-  }
-  // 脚本（若存在）
-  if (names.includes('script.md')) {
-    el.appendChild(block('播客脚本', 'pre', id, 'script.md'));
-  }
-  // 字幕
-  if (names.includes('subtitle.srt')) {
-    el.appendChild(block('字幕', 'pre', id, 'subtitle.srt'));
-  }
-  // 图片
-  if (names.includes('image.png')) {
-    el.appendChild(mediaBlock('配图', `<img class="prev" src="/api/files/${id}/image.png">`));
-  }
-  // 音频
-  if (names.includes('podcast.mp3')) {
-    el.appendChild(mediaBlock('播客音频', `<audio controls src="/api/files/${id}/podcast.mp3"></audio>`));
-  }
-  // 视频
-  if (names.includes('video.mp4')) {
-    el.appendChild(mediaBlock('成品视频', `<video controls src="/api/files/${id}/video.mp4"></video>`));
-  }
-}
-
-function block(caption, kind, id, name) {
-  const d = document.createElement('div');
-  d.className = 'artifact';
-  d.innerHTML = `<div class="cap">${caption} · ${name}</div>`;
-  const el = document.createElement(kind);
-  el.dataset.src = `/api/files/${id}/${name}`;
-  d.appendChild(el);
-  fetch(el.dataset.src).then(r => r.text()).then(t => { el.textContent = t; });
-  return d;
-}
-
-function mediaBlock(caption, html) {
-  const d = document.createElement('div');
-  d.className = 'artifact';
-  d.innerHTML = `<div class="cap">${caption}</div>${html}`;
-  return d;
-}
-
-async function loadTasks() {
-  const res = await fetch('/api/tasks');
-  const data = await res.json();
-  const el = document.getElementById('tasks');
-  el.innerHTML = '';
-  const tasks = data.tasks || [];
-  if (!tasks.length) { el.innerHTML = '<div class="empty">暂无任务</div>'; return; }
-  for (const t of tasks) {
-    const names = (t.artifacts || []).map(a => a.name);
-    const d = document.createElement('div');
-    d.className = 'task';
-    d.innerHTML = `
-      <div class="task-head">
-        <span class="tid">${t.id}</span>
-        <span class="meta">${names.length} 个产物</span>
-        <span class="chev">▶</span>
-      </div>
-      <div class="task-body"></div>`;
-    const head = d.querySelector('.task-head');
-    head.onclick = () => { d.classList.toggle('open'); if (d.classList.contains('open')) renderTaskBody(d.querySelector('.task-body'), t); };
-    el.appendChild(d);
-  }
-}
-
-function renderTaskBody(box, t) {
-  box.innerHTML = '';
-  if (!t.artifacts.length) { box.innerHTML = '<div class="empty">无产物</div>'; return; }
-  let links = '';
-  for (const a of t.artifacts) links += `<a href="${a.url}" target="_blank">${a.name}</a>`;
-  box.innerHTML = `<div class="mini-links">${links}</div>`;
-  const names = t.artifacts.map(a => a.name);
-  if (names.includes('rewritten.md')) box.appendChild(block('改写文案', 'textarea', t.id, 'rewritten.md'));
-  if (names.includes('image.png')) box.appendChild(mediaBlock('配图', `<img class="prev" src="/api/files/${t.id}/image.png">`));
-  if (names.includes('podcast.mp3')) box.appendChild(mediaBlock('播客音频', `<audio controls src="/api/files/${t.id}/podcast.mp3"></audio>`));
-  if (names.includes('video.mp4')) box.appendChild(mediaBlock('成品视频', `<video controls src="/api/files/${t.id}/video.mp4"></video>`));
-}
-
-loadTasks();
-
-/* ===== 配置面板 ===== */
-const LLM_BUILTINS = [
-  { key: 'pi', label: 'pi（pi agent，默认）' },
-];
-
-const IMAGE_BUILTINS = [
-  { key: 'nano-banana', label: 'nano-banana（官方 Gemini 生图）' },
-  { key: 'openai-image', label: 'openai-image（gpt-image）' },
-  { key: 'doubao-seedream', label: 'doubao-seedream（豆包生图）' },
-];
-const PODCAST_BUILTINS = [
-  { key: 'volc-podcast', label: 'volc-podcast（火山播客大模型，推荐）', extra: ['appid'] },
-  { key: 'openai-tts', label: 'openai-tts（通用 TTS）' },
-  { key: 'gemini-tts', label: 'gemini-tts（通用 TTS）' },
-  { key: 'volc-tts', label: 'volc-tts（火山豆包语音）', extra: ['appid'] },
-];
-let CFG = null; // 当前配置对象
-let CFG_MODELS = []; // pi 可用模型
-let PM_KIND = null; // 'llm'|'image'|'podcast'
-let PM_PROVIDER = null; // 弹窗中选中的 provider key
-
-async function openConfig() {
-  document.getElementById('cfgOverlay').classList.add('show');
-  await loadConfig();
-  renderConfig();
-}
-async function loadConfig() {
-  const res = await fetch('/api/config');
-  const data = await res.json();
-  CFG = data.config || { tasks: {}, providers: {} };
-  CFG_MODELS = data.models || [];
-  CFG.providers = CFG.providers || {};
-  CFG.tasks = CFG.tasks || {};
-}
-function closeConfig() { document.getElementById('cfgOverlay').classList.remove('show'); }
-
-function customNames() {
-  return Object.entries(CFG.providers).filter(([, p]) => p.type === 'openai-compatible').map(([n]) => n);
-}
-function labelFor(key) {
-  if (!key) return '未选择';
-  const m = builtinMeta(key);
-  return m ? m.label : (key + '（自定义）');
-}
-
-function renderConfig() {
-  const llmKey = CFG.tasks.llm?.provider || 'pi';
-  const llmModel = CFG.providers[llmKey]?.extra?.model;
-  document.getElementById('llmCurrent').textContent = labelFor(llmKey) + (llmModel ? ' · ' + llmModel : '');
-  document.getElementById('imageCurrent').textContent = labelFor(CFG.tasks.image?.provider);
-  document.getElementById('podcastCurrent').textContent = labelFor(CFG.tasks.podcast?.provider);
-  renderCustoms();
-}
-
-function maskKey(k) {
-  if (!k) return '';
-  if (k.length <= 8) return '••••••••';
-  return k.slice(0, 4) + '••••' + k.slice(-4);
-}
-function builtinMeta(key) {
-  return IMAGE_BUILTINS.find(x => x.key === key) || PODCAST_BUILTINS.find(x => x.key === key) || LLM_BUILTINS.find(x => x.key === key) || null;
-}
-
-function pmField(label, id, val, secret) {
-  const placeholder = (secret && val) ? '已配置 ' + maskKey(val) + '（留空保持原值）' : '';
-  const shown = secret ? '' : (val || '');
-  return `<div style="margin-bottom:10px"><label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">${label}</label><input type="text" id="${id}" placeholder="${placeholder}" value="${shown}"></div>`;
-}
-
-// 打开配置弹窗：llm / image / podcast（统一：provider 下拉 + 配置字段）
-function openProviderModal(kind) {
-  PM_KIND = kind;
-  const title = kind === 'llm' ? '语言模型' : (kind === 'image' ? '生图 provider' : '播客 provider');
-  document.getElementById('pmTitle').textContent = '配置 ' + title;
-
-  const builtins = kind === 'llm' ? LLM_BUILTINS : (kind === 'image' ? IMAGE_BUILTINS : PODCAST_BUILTINS);
-  const customs = customNames();
-  const cur = kind === 'llm' ? (CFG.tasks.llm?.provider || 'pi') : (CFG.tasks[kind]?.provider || builtins[0].key);
-  let sel = '<label style="font-size:12px;color:var(--muted);display:block;margin-bottom:6px">选用 provider</label>'
-    + `<select id="pmProvider" onchange="renderProviderFields()">`;
-  for (const b of builtins) sel += `<option value="${b.key}">${b.label}</option>`;
-  for (const c of customs) sel += `<option value="${c}">${c}（自定义）</option>`;
-  sel += '</select>';
-  document.getElementById('pmBody').innerHTML = sel + '<div id="pmFields" style="margin-top:12px"></div>';
-  const keep = cur && (builtins.some(b => b.key === cur) || customs.includes(cur)) ? cur : builtins[0].key;
-  document.getElementById('pmProvider').value = keep;
-  renderProviderFields();
-  document.getElementById('providerOverlay').classList.add('show');
-}
-
-// 在弹窗内渲染选中 provider 的配置字段
-function renderProviderFields() {
-  const key = document.getElementById('pmProvider').value;
-  PM_PROVIDER = key;
-  const p = CFG.providers[key];
-  let html = '';
-  if (key === 'pi') {
-    // pi 语言模型：模型来自 pi 的可用模型，无独立密钥（pi 管理认证）
-    const cur = p?.extra?.model || '';
-    let opts = '<option value="">使用 pi 默认模型</option>';
-    for (const m of CFG_MODELS) opts += `<option value="${m}">${m}</option>`;
-    html = `<div style="margin-bottom:10px"><label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">pi 模型</label>`
-      + `<select id="pmModel">${opts}</select></div><div class="hint">由 pi 管理认证；留空用默认模型。</div>`;
-    document.getElementById('pmFields').innerHTML = html;
-    document.getElementById('pmModel').value = cur;
-    return;
-  }
-  const meta = builtinMeta(key);
-  if (meta) {
-    html += pmField('API Key / Access Token', 'pmApiKey', p?.api_key || '', true);
-    for (const ek of (meta.extra || [])) {
-      html += pmField(ek.toUpperCase(), 'pm_' + ek, p?.extra?.[ek] || '', false);
-    }
-  } else {
-    html += pmField('BaseURL', 'pmBase', p?.base_url || '', false);
-    html += pmField('API Key', 'pmApiKey', p?.api_key || '', true);
-    html += `<div style="margin-bottom:10px"><label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">模型</label>`
-      + `<div class="row"><button class="ghost" onclick="fetchModelsTo('pmModel')">获取模型</button><select id="pmModel"></select></div></div>`;
-    setTimeout(() => { const s = document.getElementById('pmModel'); s.innerHTML = `<option value="${p?.model||''}">${p?.model||'— 点击「获取模型」拉取 —'}</option>`; }, 0);
-  }
-  document.getElementById('pmFields').innerHTML = html;
-}
-function closeProviderModal() { document.getElementById('providerOverlay').classList.remove('show'); }
-
-async function fetchModelsTo(selId) {
-  const base = document.getElementById('pmBase')?.value.trim();
-  const key = document.getElementById('pmApiKey')?.value.trim();
-  if (!base) { alert('请先填 BaseURL'); return; }
-  await fetchModelsInto(selId, base, key);
-}
-
-function saveProviderModal() {
-  if (PM_KIND === 'llm') {
-    const provider = document.getElementById('pmProvider').value;
-    CFG.tasks.llm = { provider };
-    if (provider === 'pi') {
-      const model = document.getElementById('pmModel').value || '';
-      const extra = { ...(CFG.providers['pi']?.extra || {}) };
-      if (model) extra.model = model;
-      CFG.providers['pi'] = { type: 'builtin', kind: 'pi', api_key: '', extra };
-    } else {
-      const p = CFG.providers[provider] || {};
-      const base = document.getElementById('pmBase')?.value?.trim() || p.base_url || '';
-      const key = document.getElementById('pmApiKey')?.value?.trim() || p.api_key || '';
-      const model = document.getElementById('pmModel')?.value || p.model || '';
-      CFG.providers[provider] = { type: 'openai-compatible', base_url: base, api_key: key, model };
-    }
-  } else {
-    const provider = document.getElementById('pmProvider').value;
-    CFG.tasks[PM_KIND] = { provider };
-    const p = CFG.providers[provider] || {};
-    const meta = builtinMeta(provider);
-    const newKey = document.getElementById('pmApiKey')?.value?.trim() || '';
-    const key = newKey || p.api_key || '';
-    if (meta) {
-      const extra = { ...(p.extra || {}) };
-      for (const ek of (meta.extra || [])) {
-        const v = document.getElementById('pm_' + ek)?.value?.trim() || '';
-        if (v) extra[ek] = v;
-      }
-      CFG.providers[provider] = { type: 'builtin', kind: provider, api_key: key, extra };
-    } else {
-      const base = document.getElementById('pmBase')?.value?.trim() || p.base_url || '';
-      const model = document.getElementById('pmModel')?.value || p.model || '';
-      CFG.providers[provider] = { type: 'openai-compatible', base_url: base, api_key: key, model };
-    }
-  }
-  closeProviderModal();
-  renderConfig();
-}
-
-function toggleCustomForm() {
-  const el = document.getElementById('customForm');
-  el.style.display = el.style.display === 'none' ? 'block' : 'none';
-}
-
-function renderCustoms() {
-  const el = document.getElementById('cfgCustoms');
-  el.innerHTML = '';
-  const customs = customNames();
-  if (!customs.length) { el.innerHTML = '<div class="hint">暂无自定义 provider，点下方「+ 添加自定义 provider」新增</div>'; }
-  for (const n of customs) {
-    const p = CFG.providers[n];
-    const d = document.createElement('div');
-    d.className = 'custom-item';
-    d.innerHTML = `<span><b>${n}</b> · ${p.model} · ${p.base_url}</span><button class="del" data-n="${n}">删除</button>`;
-    d.querySelector('.del').onclick = () => { delete CFG.providers[n]; renderConfig(); };
-    el.appendChild(d);
-  }
-}
-
-async function fetchModelsInto(selId, base, apiKey) {
-  const sel = document.getElementById(selId);
-  sel.innerHTML = '<option value="">拉取中…</option>';
-  try {
-    const res = await fetch('/api/fetch-models', { method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ base_url: base, api_key: apiKey || '' }) });
-    const data = await res.json();
-    if (data.ok) {
-      sel.innerHTML = '<option value="">— 选择模型 —</option>';
-      for (const m of data.models) sel.innerHTML += `<option value="${m}">${m}</option>`;
-    } else { sel.innerHTML = `<option value="">拉取失败：${data.error||''}</option>`; }
-  } catch (e) { sel.innerHTML = `<option value="">拉取失败：${e.message}</option>`; }
-}
-async function fetchCustomModels() {
-  await fetchModelsInto('cModel', document.getElementById('cBase').value.trim(), document.getElementById('cKey').value.trim());
-}
-
-function addCustom() {
-  const name = document.getElementById('cName').value.trim();
-  const base = document.getElementById('cBase').value.trim();
-  const key = document.getElementById('cKey').value.trim();
-  const model = document.getElementById('cModel').value;
-  if (!name || !base || !model) { alert('名称 / BaseURL / 模型 必填'); return; }
-  CFG.providers[name] = { type: 'openai-compatible', base_url: base, api_key: key, model };
-  ['cName','cBase','cKey'].forEach(id => document.getElementById(id).value = '');
-  const sel = document.getElementById('cModel'); sel.innerHTML = '<option value="">— 点击「获取模型」拉取 —</option>'; sel.value = '';
-  document.getElementById('customForm').style.display = 'none';
-  renderConfig();
-}
-
-async function saveConfig() {
-  const res = await fetch('/api/config', { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(CFG) });
-  const data = await res.json();
-  if (data.ok) { closeConfig(); setStatus('✓ 配置已保存'); }
-  else alert('保存失败：' + (data.error || '未知'));
-}
-</script>
+  <!-- 配置弹窗 -->
   <div class="overlay" id="cfgOverlay">
     <div class="cfg-modal">
-      <div class="cfg-head">
-        <span>Agent 配置</span>
-        <button class="x" onclick="closeConfig()">×</button>
-      </div>
+      <div class="cfg-head"><span>Agent 配置</span><button class="x" onclick="closeConfig()">×</button></div>
       <div class="cfg-body">
         <section>
-          <h3>语言模型（pi agent）</h3>
+          <h3>语言模型</h3>
           <div class="cfg-current"><span id="llmCurrent"></span></div>
           <button class="ghost" onclick="openProviderModal('llm')">⚙ 配置</button>
-          <div class="hint">由 pi 管理认证与模型；在这里选择要用的模型，留空为 pi 默认。</div>
+          <div class="hint">默认 pi agent（由 pi 管理认证）；也可选用自定义 provider。</div>
         </section>
         <section>
           <h3>生图 provider</h3>
           <div class="cfg-current"><span id="imageCurrent"></span></div>
           <button class="ghost" onclick="openProviderModal('image')">⚙ 配置</button>
-          <div class="hint">在弹窗中选定模型并填写密钥（脱敏）。</div>
         </section>
         <section>
           <h3>播客 provider</h3>
           <div class="cfg-current"><span id="podcastCurrent"></span></div>
           <button class="ghost" onclick="openProviderModal('podcast')">⚙ 配置</button>
-          <div class="hint">在弹窗中选定模型并填写密钥；火山类需填 appid。</div>
         </section>
         <section>
           <h3>自定义 provider（Other）</h3>
@@ -647,34 +236,428 @@ async function saveConfig() {
             <div class="row"><input type="text" id="cName" placeholder="名称"></div>
             <div class="row"><input type="text" id="cBase" placeholder="BaseURL（https://…/v1）"></div>
             <div class="row"><input type="text" id="cKey" placeholder="API Key"></div>
-            <div class="row">
-              <button class="ghost" onclick="fetchCustomModels()">获取模型</button>
-              <select id="cModel"><option value="">— 点击「获取模型」拉取 —</option></select>
-            </div>
+            <div class="row"><button class="ghost" onclick="fetchCustomModels()">获取模型</button><select id="cModel"><option value="">— 点击「获取模型」拉取 —</option></select></div>
             <button onclick="addCustom()">添加</button>
           </div>
         </section>
       </div>
-      <div class="cfg-foot">
-        <button class="ghost" onclick="closeConfig()">取消</button>
-        <button onclick="saveConfig()">保存</button>
-      </div>
+      <div class="cfg-foot"><button class="ghost" onclick="closeConfig()">取消</button><button onclick="saveConfig()">保存</button></div>
     </div>
   </div>
 
-  <!-- provider 配置弹窗（语言模型/生图/播客共用） -->
+  <!-- provider 配置弹窗 -->
   <div class="overlay" id="providerOverlay">
     <div class="cfg-modal" style="width:440px">
-      <div class="cfg-head">
-        <span id="pmTitle">配置</span>
-        <button class="x" onclick="closeProviderModal()">×</button>
-      </div>
+      <div class="cfg-head"><span id="pmTitle">配置</span><button class="x" onclick="closeProviderModal()">×</button></div>
       <div class="cfg-body" id="pmBody"></div>
-      <div class="cfg-foot">
-        <button class="ghost" onclick="closeProviderModal()">取消</button>
-        <button onclick="saveProviderModal()">保存</button>
-      </div>
+      <div class="cfg-foot"><button class="ghost" onclick="closeProviderModal()">取消</button><button onclick="saveProviderModal()">保存</button></div>
     </div>
   </div>
+
+<script>
+const state = { refPath:null, fileName:null, currentId:null, es:null };
+const ARTIFACT_META = {
+  'rewritten.md': { step:'rewrite', cap:'改写文案', kind:'text' },
+  'script.md':    { step:'podcast', cap:'播客脚本', kind:'text' },
+  'subtitle.srt': { step:'podcast', cap:'字幕', kind:'text' },
+  'image.png':    { step:'image', cap:'配图', kind:'image' },
+  'podcast.mp3':  { step:'podcast', cap:'播客音频', kind:'audio' },
+  'video.mp4':    { step:'video', cap:'成品视频', kind:'video' },
+};
+
+// ===== 主题 =====
+function toggleTheme() {
+  const cur = document.documentElement.getAttribute('data-theme');
+  const next = cur === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  localStorage.setItem('mf-theme', next);
+}
+(function initTheme(){
+  const saved = localStorage.getItem('mf-theme');
+  const sys = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', saved || sys);
+})();
+
+// ===== 上传参考图 =====
+const drop = document.getElementById('drop'), fileInput = document.getElementById('file');
+drop.addEventListener('click', () => fileInput.click());
+['dragover','dragenter'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('on'); }));
+['dragleave','drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('on'); }));
+drop.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) upload(f); });
+fileInput.addEventListener('change', () => { const f = fileInput.files[0]; if (f) upload(f); });
+async function upload(file) {
+  setStatus('上传中…');
+  const fd = new FormData(); fd.append('file', file);
+  try {
+    const res = await fetch('/api/upload', { method:'POST', body:fd });
+    const d = await res.json();
+    if (d.ok) { state.refPath = d.path; drop.textContent = '✓ ' + file.name; drop.classList.add('has'); setStatus('参考图已上传'); }
+    else setStatus('上传失败：' + d.error, true);
+  } catch(e){ setStatus('上传失败：' + e.message, true); }
+}
+
+function setStatus(msg, isErr) { const el = document.getElementById('status'); el.className = isErr ? 'err' : ''; el.innerHTML = msg; }
+
+// ===== 生产线状态 =====
+function setStep(step, status) {
+  const st = document.querySelector(`.station[data-step="${step}"]`);
+  if (!st) return;
+  st.classList.remove('done','running','failed');
+  if (status) st.classList.add(status);
+}
+function resetLine() { ['rewrite','image','podcast','video'].forEach(s => setStep(s, null)); }
+
+// ===== 执行（后台 + SSE）=====
+async function run(step) {
+  const text = document.getElementById('text').value.trim();
+  const prompt = document.getElementById('prompt').value.trim();
+  const imagePrompt = document.getElementById('imagePrompt').value.trim();
+  const podcastPrompt = document.getElementById('podcastPrompt').value.trim();
+  const id = document.getElementById('taskId').value.trim() || null;
+
+  if ((step === 'run' || step === 'rewrite') && !text) { setStatus('请先填写参考文案', true); return; }
+
+  const body = {};
+  if (step === 'run' || step === 'rewrite') body.text = text;
+  if ((step === 'run' || step === 'rewrite') && prompt) body.prompt = prompt;
+  if (step === 'run' && imagePrompt) body.image_prompt = imagePrompt;
+  if (step === 'image' && imagePrompt) body.prompt = imagePrompt;
+  if (step === 'run' && podcastPrompt) body.podcast_prompt = podcastPrompt;
+  if (step === 'podcast' && podcastPrompt) body.prompt = podcastPrompt;
+  if (id) body.id = id;
+  else if (state.currentId && step !== 'rewrite' && step !== 'run') body.id = state.currentId;
+  if ((step === 'run' || step === 'image') && state.refPath) body.ref_image = state.refPath;
+
+  setStatus('<span class="spin"></span>启动任务…');
+
+  try {
+    const res = await fetch('/api/' + step, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
+    const d = await res.json();
+    if (!d.ok) { setStatus('出错：' + (d.error || '未知'), true); return; }
+    const taskId = d.id;
+    state.currentId = taskId;
+    document.getElementById('taskId').value = taskId;
+    // 准备工作区
+    if (step === 'run' || step === 'rewrite') { resetLine(); document.getElementById('result').innerHTML = ''; }
+    subscribe(taskId, step);
+    setStatus('<span class="spin"></span>任务 ' + taskId + ' 运行中…');
+  } catch(e){ setStatus('请求失败：' + e.message, true); }
+}
+
+function subscribe(taskId, triggerStep) {
+  if (state.es) state.es.close();
+  // 先回放当前状态（补齐建立 SSE 前可能已发生的事件）
+  fetch('/api/tasks/' + taskId).then(r => r.json()).then(t => replayTask(t)).catch(()=>{});
+  const es = new EventSource('/api/tasks/' + taskId + '/events');
+  state.es = es;
+  es.onmessage = (e) => {
+    let ev; try { ev = JSON.parse(e.data); } catch(_) { return; }
+    handleEvent(ev);
+  };
+  es.onerror = () => { es.close(); };
+}
+
+function replayTask(t) {
+  // 根据 task.json 的 steps 状态设置生产线节点
+  const steps = t.steps || {};
+  for (const [step, st] of Object.entries(steps)) {
+    if (st === 'done' || st === 'running' || st === 'failed') setStep(step, st);
+  }
+  // 渲染已产出的中间产物
+  for (const a of (t.artifacts || [])) {
+    const meta = ARTIFACT_META[a.name];
+    if (meta) showArtifact(meta.step, a.name, a.url);
+  }
+  if (t.status === 'failed') setStatus('✗ 失败：' + (t.error || '未知'), true);
+}
+
+function handleEvent(ev) {
+  if (ev.type === 'step') {
+    setStep(ev.step, ev.status);
+    if (ev.status === 'running') setStatus('<span class="spin"></span>正在执行：' + stepName(ev.step) + '…');
+  } else if (ev.type === 'chunk') {
+    typewriter(ev.step, ev.delta);
+  } else if (ev.type === 'artifact') {
+    showArtifact(ev.step, ev.name, ev.url);
+  } else if (ev.type === 'task') {
+    if (ev.status === 'done') { setStatus('✓ 完成'); loadTasks(); }
+    else if (ev.status === 'failed') { setStatus('✗ 失败：' + (ev.error || '未知'), true); loadTasks(); }
+  }
+}
+
+function stepName(s) { return {rewrite:'改写',image:'生图',podcast:'播客',video:'视频'}[s] || s; }
+
+// 打字机：把完整文本逐字渲染到对应产物面板
+function typewriter(step, text) {
+  const meta = step === 'rewrite' ? ARTIFACT_META['rewritten.md'] : null;
+  const el = ensureArtifact(step, meta.cap, 'txt');
+  el.innerHTML = '';
+  let i = 0;
+  const timer = setInterval(() => {
+    el.textContent = text.slice(0, ++i);
+    if (i >= text.length) clearInterval(timer);
+  }, 12);
+}
+
+function ensureArtifact(step, cap, kind) {
+  const result = document.getElementById('result');
+  let box = result.querySelector(`[data-artifact="${step}-${kind}"]`);
+  if (!box) {
+    box = document.createElement('div');
+    box.className = 'artifact';
+    box.dataset.artifact = step + '-' + kind;
+    box.innerHTML = `<div class="cap">${cap}</div>`;
+    result.appendChild(box);
+  }
+  return box;
+}
+
+function showArtifact(step, name, url) {
+  const meta = ARTIFACT_META[name];
+  if (!meta) return;
+  const result = document.getElementById('result');
+  let box = result.querySelector(`[data-artifact="${name}"]`);
+  if (!box) {
+    box = document.createElement('div');
+    box.className = 'artifact';
+    box.dataset.artifact = name;
+    box.innerHTML = `<div class="cap">${meta.cap} · ${name}</div>`;
+    result.appendChild(box);
+  }
+  if (meta.kind === 'image') {
+    box.innerHTML = `<div class="cap">${meta.cap}</div><img class="prev" src="${url}">`;
+  } else if (meta.kind === 'audio') {
+    box.innerHTML = `<div class="cap">${meta.cap}</div><audio controls src="${url}"></audio>`;
+  } else if (meta.kind === 'video') {
+    box.innerHTML = `<div class="cap">${meta.cap}</div><video controls src="${url}"></video>`;
+  } else if (meta.kind === 'text') {
+    // 文本：若已有打字机内容则跳过（避免覆盖），否则 fetch 填充
+    const existing = box.querySelector('.txt');
+    if (!existing) {
+      box.innerHTML = `<div class="cap">${meta.cap}</div><div class="txt placeholder">加载中…</div>`;
+      fetch(url).then(r => r.text()).then(t => {
+        const t2 = box.querySelector('.txt');
+        if (t2 && t2.classList.contains('placeholder')) { t2.textContent = t; t2.classList.remove('placeholder'); }
+      });
+    }
+  }
+}
+
+// ===== 任务列表 =====
+async function loadTasks() {
+  const res = await fetch('/api/tasks');
+  const d = await res.json();
+  const el = document.getElementById('tasks');
+  el.innerHTML = '';
+  const tasks = d.tasks || [];
+  if (!tasks.length) { el.innerHTML = '<div class="empty">暂无任务</div>'; return; }
+  for (const t of tasks) {
+    const st = t.status || 'unknown';
+    const cur = t.current_step ? stepName(t.current_step) : '';
+    const box = document.createElement('div');
+    box.className = 'task';
+    box.innerHTML = `
+      <div class="task-head">
+        <span class="st ${st}"></span>
+        <span class="tid">${t.id}</span>
+        <span class="step">${st === 'running' ? '运行中 · ' + cur : (t.error ? t.error : '')}</span>
+        <span class="chev">▶</span>
+      </div>
+      <div class="task-body"></div>`;
+    box.querySelector('.task-head').onclick = () => {
+      box.classList.toggle('open');
+      if (box.classList.contains('open')) renderTaskBody(box.querySelector('.task-body'), t);
+    };
+    el.appendChild(box);
+  }
+}
+
+function renderTaskBody(box, t) {
+  box.innerHTML = '';
+  const arts = t.artifacts || [];
+  if (!arts.length) { box.innerHTML = '<div class="empty">无产物</div>'; return; }
+  for (const a of arts) {
+    const meta = ARTIFACT_META[a.name];
+    if (!meta) continue;
+    const d = document.createElement('div');
+    d.className = 'artifact';
+    if (meta.kind === 'image') d.innerHTML = `<div class="cap">${meta.cap}</div><img class="prev" src="${a.url}">`;
+    else if (meta.kind === 'audio') d.innerHTML = `<div class="cap">${meta.cap}</div><audio controls src="${a.url}"></audio>`;
+    else if (meta.kind === 'video') d.innerHTML = `<div class="cap">${meta.cap}</div><video controls src="${a.url}"></video>`;
+    else if (meta.kind === 'text') d.innerHTML = `<div class="cap">${meta.cap}</div><div class="txt placeholder">加载中…</div>`;
+    box.appendChild(d);
+    if (meta.kind === 'text') {
+      fetch(a.url).then(r => r.text()).then(tx => {
+        const t2 = d.querySelector('.txt');
+        if (t2) { t2.textContent = tx; t2.classList.remove('placeholder'); }
+      });
+    }
+  }
+}
+
+loadTasks();
+
+// ===== 配置面板 =====
+const LLM_BUILTINS = [ { key:'pi', label:'pi（pi agent，默认）' } ];
+const IMAGE_BUILTINS = [
+  { key:'nano-banana', label:'nano-banana（官方 Gemini 生图）' },
+  { key:'openai-image', label:'openai-image（gpt-image）' },
+  { key:'doubao-seedream', label:'doubao-seedream（豆包生图）' },
+];
+const PODCAST_BUILTINS = [
+  { key:'volc-podcast', label:'volc-podcast（火山播客大模型，推荐）', extra:['appid'] },
+  { key:'openai-tts', label:'openai-tts（通用 TTS）' },
+  { key:'gemini-tts', label:'gemini-tts（通用 TTS）' },
+  { key:'volc-tts', label:'volc-tts（火山豆包语音）', extra:['appid'] },
+];
+let CFG = null, CFG_MODELS = [], PM_KIND = null, PM_PROVIDER = null;
+
+async function openConfig() {
+  document.getElementById('cfgOverlay').classList.add('show');
+  const res = await fetch('/api/config');
+  const d = await res.json();
+  CFG = d.config || { tasks:{}, providers:{} };
+  CFG_MODELS = d.models || [];
+  CFG.providers = CFG.providers || {}; CFG.tasks = CFG.tasks || {};
+  renderConfig();
+}
+function closeConfig(){ document.getElementById('cfgOverlay').classList.remove('show'); }
+function customNames(){ return Object.entries(CFG.providers).filter(([,p])=>p.type==='openai-compatible').map(([n])=>n); }
+function builtinMeta(key){ return IMAGE_BUILTINS.find(x=>x.key===key) || PODCAST_BUILTINS.find(x=>x.key===key) || LLM_BUILTINS.find(x=>x.key===key) || null; }
+function labelFor(key){ if(!key) return '未选择'; const m=builtinMeta(key); return m ? m.label : (key+'（自定义）'); }
+function maskKey(k){ if(!k) return ''; if(k.length<=8) return '••••••••'; return k.slice(0,4)+'••••'+k.slice(-4); }
+
+function renderConfig(){
+  const llmKey = CFG.tasks.llm?.provider || 'pi';
+  const llmModel = CFG.providers[llmKey]?.extra?.model;
+  document.getElementById('llmCurrent').textContent = labelFor(llmKey) + (llmModel ? ' · ' + llmModel : '');
+  document.getElementById('imageCurrent').textContent = labelFor(CFG.tasks.image?.provider);
+  document.getElementById('podcastCurrent').textContent = labelFor(CFG.tasks.podcast?.provider);
+  renderCustoms();
+}
+
+function pmField(label,id,val,secret){
+  const ph = (secret && val) ? '已配置 ' + maskKey(val) + '（留空保持原值）' : '';
+  const shown = secret ? '' : (val||'');
+  return `<div style="margin-bottom:10px"><label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">${label}</label><input type="text" id="${id}" placeholder="${ph}" value="${shown}"></div>`;
+}
+
+function openProviderModal(kind){
+  PM_KIND = kind;
+  const title = kind==='llm' ? '语言模型' : (kind==='image'?'生图 provider':'播客 provider');
+  document.getElementById('pmTitle').textContent = '配置 ' + title;
+  const builtins = kind==='llm' ? LLM_BUILTINS : (kind==='image'?IMAGE_BUILTINS:PODCAST_BUILTINS);
+  const customs = customNames();
+  const cur = kind==='llm' ? (CFG.tasks.llm?.provider||'pi') : (CFG.tasks[kind]?.provider || builtins[0].key);
+  let sel = '<label style="font-size:12px;color:var(--muted);display:block;margin-bottom:6px">选用 provider</label><select id="pmProvider" onchange="renderProviderFields()">';
+  for (const b of builtins) sel += `<option value="${b.key}">${b.label}</option>`;
+  for (const c of customs) sel += `<option value="${c}">${c}（自定义）</option>`;
+  sel += '</select>';
+  document.getElementById('pmBody').innerHTML = sel + '<div id="pmFields" style="margin-top:12px"></div>';
+  document.getElementById('pmProvider').value = cur && (builtins.some(b=>b.key===cur)||customs.includes(cur)) ? cur : builtins[0].key;
+  renderProviderFields();
+  document.getElementById('providerOverlay').classList.add('show');
+}
+function closeProviderModal(){ document.getElementById('providerOverlay').classList.remove('show'); }
+
+function renderProviderFields(){
+  const key = document.getElementById('pmProvider').value;
+  PM_PROVIDER = key;
+  const p = CFG.providers[key];
+  let html = '';
+  if (key === 'pi') {
+    const cur = p?.extra?.model || '';
+    let opts = '<option value="">使用 pi 默认模型</option>';
+    for (const m of CFG_MODELS) opts += `<option value="${m}">${m}</option>`;
+    html = `<div style="margin-bottom:10px"><label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">pi 模型</label><select id="pmModel">${opts}</select></div><div class="hint">由 pi 管理认证；留空用默认模型。</div>`;
+    document.getElementById('pmFields').innerHTML = html;
+    document.getElementById('pmModel').value = cur;
+    return;
+  }
+  const meta = builtinMeta(key);
+  if (meta) {
+    html += pmField('API Key / Access Token','pmApiKey', p?.api_key||'', true);
+    for (const ek of (meta.extra||[])) html += pmField(ek.toUpperCase(),'pm_'+ek, p?.extra?.[ek]||'', false);
+  } else {
+    html += pmField('BaseURL','pmBase', p?.base_url||'', false);
+    html += pmField('API Key','pmApiKey', p?.api_key||'', true);
+    html += `<div style="margin-bottom:10px"><label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">模型</label><div class="row"><button class="ghost" onclick="fetchModelsTo('pmModel')">获取模型</button><select id="pmModel"></select></div></div>`;
+    setTimeout(()=>{ const s=document.getElementById('pmModel'); s.innerHTML=`<option value="${p?.model||''}">${p?.model||'— 点击「获取模型」拉取 —'}</option>`; },0);
+  }
+  document.getElementById('pmFields').innerHTML = html;
+}
+
+function saveProviderModal(){
+  const provider = document.getElementById('pmProvider').value;
+  const p = CFG.providers[provider] || {};
+  const newKey = document.getElementById('pmApiKey')?.value?.trim() || '';
+  const key = newKey || p.api_key || '';
+  if (PM_KIND === 'llm') {
+    CFG.tasks.llm = { provider };
+    if (provider === 'pi') {
+      const model = document.getElementById('pmModel').value || '';
+      const extra = { ...(p.extra||{}) }; if (model) extra.model = model;
+      CFG.providers['pi'] = { type:'builtin', kind:'pi', api_key:'', extra };
+    } else {
+      const base = document.getElementById('pmBase')?.value?.trim() || p.base_url || '';
+      const model = document.getElementById('pmModel')?.value || p.model || '';
+      CFG.providers[provider] = { type:'openai-compatible', base_url:base, api_key:key, model };
+    }
+  } else {
+    CFG.tasks[PM_KIND] = { provider };
+    const meta = builtinMeta(provider);
+    if (meta) {
+      const extra = { ...(p.extra||{}) };
+      for (const ek of (meta.extra||[])) { const v = document.getElementById('pm_'+ek)?.value?.trim()||''; if (v) extra[ek]=v; }
+      CFG.providers[provider] = { type:'builtin', kind:provider, api_key:key, extra };
+    } else {
+      const base = document.getElementById('pmBase')?.value?.trim() || p.base_url || '';
+      const model = document.getElementById('pmModel')?.value || p.model || '';
+      CFG.providers[provider] = { type:'openai-compatible', base_url:base, api_key:key, model };
+    }
+  }
+  closeProviderModal();
+  renderConfig();
+}
+
+function toggleCustomForm(){ const el=document.getElementById('customForm'); el.style.display = el.style.display==='none'?'block':'none'; }
+function renderCustoms(){
+  const el = document.getElementById('cfgCustoms'); el.innerHTML = '';
+  const customs = customNames();
+  if (!customs.length){ el.innerHTML = '<div class="hint">暂无自定义 provider，点下方「+ 添加」新增</div>'; }
+  for (const n of customs) {
+    const p = CFG.providers[n];
+    const d = document.createElement('div'); d.className='custom-item';
+    d.innerHTML = `<span><b>${n}</b> · ${p.model} · ${p.base_url}</span><button class="del">删除</button>`;
+    d.querySelector('.del').onclick = ()=>{ delete CFG.providers[n]; renderConfig(); };
+    el.appendChild(d);
+  }
+}
+async function fetchModelsInto(selId, base, apiKey){
+  const sel = document.getElementById(selId); sel.innerHTML = '<option value="">拉取中…</option>';
+  try {
+    const res = await fetch('/api/fetch-models',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_url:base,api_key:apiKey||''})});
+    const d = await res.json();
+    if (d.ok){ sel.innerHTML='<option value="">— 选择模型 —</option>'; for(const m of d.models) sel.innerHTML+=`<option value="${m}">${m}</option>`; }
+    else sel.innerHTML = `<option value="">拉取失败：${d.error||''}</option>`;
+  } catch(e){ sel.innerHTML = `<option value="">拉取失败：${e.message}</option>`; }
+}
+async function fetchModelsTo(selId){ await fetchModelsInto(selId, document.getElementById('pmBase')?.value.trim(), document.getElementById('pmApiKey')?.value.trim()); }
+async function fetchCustomModels(){ await fetchModelsInto('cModel', document.getElementById('cBase').value.trim(), document.getElementById('cKey').value.trim()); }
+function addCustom(){
+  const name=document.getElementById('cName').value.trim(), base=document.getElementById('cBase').value.trim(), key=document.getElementById('cKey').value.trim(), model=document.getElementById('cModel').value;
+  if(!name||!base||!model){ alert('名称 / BaseURL / 模型 必填'); return; }
+  CFG.providers[name] = { type:'openai-compatible', base_url:base, api_key:key, model };
+  ['cName','cBase','cKey'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('cModel').innerHTML='<option value="">— 点击「获取模型」拉取 —</option>';
+  document.getElementById('customForm').style.display='none';
+  renderConfig();
+}
+async function saveConfig(){
+  const res = await fetch('/api/config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(CFG)});
+  const d = await res.json();
+  if (d.ok){ closeConfig(); setStatus('✓ 配置已保存'); } else alert('保存失败：'+(d.error||'未知'));
+}
+</script>
 </body>
 </html>

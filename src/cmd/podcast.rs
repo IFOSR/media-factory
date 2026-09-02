@@ -3,8 +3,8 @@ use std::path::Path;
 use crate::config::Config;
 use crate::ffmpeg;
 use crate::llm::LlmAgent;
-
 use crate::podcast::{self, PodcastBackend, PodcastRequest, PodcastResult, VolcPodcast};
+use crate::task::{Step, TaskEvents};
 use crate::tts::TtsProvider;
 
 fn script_prompt_template() -> String {
@@ -21,6 +21,7 @@ pub async fn run_with(
     backend: &PodcastBackend,
     force_script: bool,
     user_prompt: Option<&str>,
+    events: &TaskEvents,
 ) -> anyhow::Result<()> {
     let rewritten_path = dir.join("rewritten.md");
     anyhow::ensure!(
@@ -30,10 +31,11 @@ pub async fn run_with(
     );
     let text = std::fs::read_to_string(&rewritten_path)?;
     let script_path = dir.join("script.md");
+    events.step_running(Step::Podcast);
 
     match backend {
-        PodcastBackend::Volc(v) => run_volc(v, dir, &script_path, &text, force_script, user_prompt).await,
-        PodcastBackend::Tts(t) => run_tts(t.as_ref(), dir, &script_path, &text, llm, user_prompt).await,
+        PodcastBackend::Volc(v) => run_volc(v, dir, &script_path, &text, force_script, user_prompt, events).await,
+        PodcastBackend::Tts(t) => run_tts(t.as_ref(), dir, &script_path, &text, llm, user_prompt, events).await,
     }
 }
 
@@ -52,6 +54,7 @@ async fn run_volc(
     text: &str,
     force_script: bool,
     user_prompt: Option<&str>,
+    events: &TaskEvents,
 ) -> anyhow::Result<()> {
     let input_text = with_style(text, user_prompt);
     // 模式 B：生成脚本供人工修改
@@ -67,6 +70,8 @@ async fn run_volc(
             anyhow::bail!("预期返回脚本，但得到了音频");
         };
         std::fs::write(script_path, &s)?;
+        events.artifact(Step::Podcast, "script.md");
+        events.step_done(Step::Podcast);
         println!("✓ 已生成脚本: {}，请人工修改后重跑 `media-factory podcast --id {}`", script_path.display(), dir.file_name().unwrap().to_string_lossy());
         return Ok(());
     }
@@ -88,11 +93,14 @@ async fn run_volc(
             anyhow::bail!("预期返回音频，但得到了脚本");
         };
         write_audio(dir, &bytes)?;
+        events.artifact(Step::Podcast, "podcast.mp3");
         if !subtitles.is_empty() {
             let srt = dir.join("subtitle.srt");
             podcast::write_srt(&srt, &subtitles)?;
+            events.artifact(Step::Podcast, "subtitle.srt");
             println!("✓ 字幕已生成: {}", srt.display());
         }
+        events.step_done(Step::Podcast);
         return Ok(());
     }
 
@@ -108,11 +116,14 @@ async fn run_volc(
         anyhow::bail!("预期返回音频，但得到了脚本");
     };
     write_audio(dir, &bytes)?;
+    events.artifact(Step::Podcast, "podcast.mp3");
     if !subtitles.is_empty() {
         let srt = dir.join("subtitle.srt");
         podcast::write_srt(&srt, &subtitles)?;
+        events.artifact(Step::Podcast, "subtitle.srt");
         println!("✓ 字幕已生成: {}", srt.display());
     }
+    events.step_done(Step::Podcast);
     Ok(())
 }
 
@@ -123,6 +134,7 @@ async fn run_tts(
     text: &str,
     llm: &dyn LlmAgent,
     user_prompt: Option<&str>,
+    events: &TaskEvents,
 ) -> anyhow::Result<()> {
     // 脚本：已存在则直接用，否则 pi 生成
     let script = if script_path.exists() {
@@ -159,6 +171,9 @@ async fn run_tts(
 
     let out = dir.join("podcast.mp3");
     ffmpeg::concat_mp3(&segs, &out)?;
+    events.artifact(Step::Podcast, "podcast.mp3");
+    events.artifact(Step::Podcast, "script.md");
+    events.step_done(Step::Podcast);
     println!("✓ 播客完成: {}", out.display());
     Ok(())
 }
@@ -187,6 +202,7 @@ pub async fn run(
     let cfg = Config::load(&Config::path())?;
     let llm = crate::llm::resolve_llm(&cfg)?;
     let backend = podcast::resolve_podcast(&cfg)?;
-    run_with(&dir, llm.as_ref(), &backend, force_script, user_prompt.as_deref()).await?;
+    let events = crate::task::TaskEvents::local(Path::new("output"), &id);
+    run_with(&dir, llm.as_ref(), &backend, force_script, user_prompt.as_deref(), &events).await?;
     Ok(id)
 }

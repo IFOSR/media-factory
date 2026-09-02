@@ -5,6 +5,7 @@ use crate::config::Config;
 use crate::llm::LlmAgent;
 use crate::podcast as podcast_backend;
 use crate::provider;
+use crate::task::{Step, TaskEvents};
 
 /// 各步骤的用户自定义 prompt
 pub struct Prompts<'a> {
@@ -26,6 +27,9 @@ pub async fn run(
     let cfg = Config::load(&Config::path())?;
     let llm = crate::llm::resolve_llm(&cfg)?;
     let source = rewrite::read_input(input)?;
+    let id = id.unwrap_or_else(rewrite::gen_task_id);
+    let events = TaskEvents::local(Path::new("output"), &id);
+    events.init();
     let prompts = Prompts {
         rewrite: rewrite_prompt.as_deref(),
         image: image_prompt.as_deref(),
@@ -36,34 +40,71 @@ pub async fn run(
         &cfg,
         llm.as_ref(),
         &source,
-        id,
+        &id,
         reference.map(PathBuf::from),
         &prompts,
+        &events,
     )
     .await
 }
 
 /// 可注入依赖的完整流水线（测试用）
+#[allow(clippy::too_many_arguments)]
 pub async fn run_with_config(
     output_root: &Path,
     cfg: &Config,
     llm: &dyn LlmAgent,
     source: &str,
-    id: Option<String>,
+    id: &str,
     reference: Option<PathBuf>,
     prompts: &Prompts<'_>,
+    events: &TaskEvents,
 ) -> anyhow::Result<String> {
-    let id = rewrite::run_with(output_root, source, id, llm, prompts.rewrite).await?;
+    let id = match rewrite::run_with(output_root, source, id, llm, prompts.rewrite, events).await {
+        Ok(id) => id,
+        Err(e) => {
+            events.step_failed(Step::Rewrite, &e.to_string());
+            events.task_error(&e.to_string());
+            return Err(e);
+        }
+    };
     let dir = output_root.join(&id);
 
-    let img_provider = provider::resolve_image(cfg)?;
-    image::run_with(&dir, reference, llm, img_provider.as_ref(), prompts.image).await?;
+    let img_provider = match provider::resolve_image(cfg) {
+        Ok(p) => p,
+        Err(e) => {
+            events.step_failed(Step::Image, &e.to_string());
+            events.task_error(&e.to_string());
+            return Err(e);
+        }
+    };
+    if let Err(e) = image::run_with(&dir, reference, llm, img_provider.as_ref(), prompts.image, events).await {
+        events.step_failed(Step::Image, &e.to_string());
+        events.task_error(&e.to_string());
+        return Err(e);
+    }
 
-    let backend = podcast_backend::resolve_podcast(cfg)?;
-    podcast::run_with(&dir, llm, &backend, false, prompts.podcast).await?;
+    let backend = match podcast_backend::resolve_podcast(cfg) {
+        Ok(b) => b,
+        Err(e) => {
+            events.step_failed(Step::Podcast, &e.to_string());
+            events.task_error(&e.to_string());
+            return Err(e);
+        }
+    };
+    if let Err(e) = podcast::run_with(&dir, llm, &backend, false, prompts.podcast, events).await {
+        events.step_failed(Step::Podcast, &e.to_string());
+        events.task_error(&e.to_string());
+        return Err(e);
+    }
 
-    video::run_with(&dir)?;
+    if let Err(e) = video::run_with(&dir, events) {
+        events.step_failed(Step::Video, &e.to_string());
+        events.task_error(&e.to_string());
+        return Err(e);
+    }
 
+    events.task_done();
     println!("完成！产物目录: {}/{}/", output_root.display(), id);
     Ok(id)
 }
@@ -188,8 +229,9 @@ done
         let cfg = mock_config(img_server.uri(), tts_server.uri());
         let llm = PiRpcAgent::with_binary(pi_bin, None).unwrap();
         let root = dir.path().join("output");
+        let events = crate::task::TaskEvents::local(&root, "e2e1");
 
-        run_with_config(&root, &cfg, &llm, "原始参考内容", Some("e2e1".into()), None, &Prompts { rewrite: None, image: None, podcast: None })
+        run_with_config(&root, &cfg, &llm, "原始参考内容", "e2e1", None, &Prompts { rewrite: None, image: None, podcast: None }, &events)
             .await
             .unwrap();
 

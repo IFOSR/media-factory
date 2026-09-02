@@ -1,23 +1,28 @@
 //! Web 服务：提供与 CLI 一致的功能（改写 / 生图 / 播客 / 视频 / 全流程）。
+//! 执行端点为「后台执行 + SSE 流式推送」。
 
+use std::convert::Infallible;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use axum::extract::{Path as AxPath, State};
-use axum::http::header::{CONTENT_TYPE, CONTENT_DISPOSITION};
+use axum::http::header::{CONTENT_DISPOSITION, CONTENT_TYPE};
 use axum::http::StatusCode;
+use axum::response::sse::{Event as SseEvent, Sse};
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::sync::Mutex;
+use tokio::sync::broadcast::error::RecvError;
 
 use crate::cmd;
 use crate::config::Config;
 use crate::pi_rpc;
 use crate::podcast as podcast_backend;
 use crate::provider;
+use crate::task::TaskEvents;
 use crate::wizard;
 
 const OUTPUT_ROOT: &str = "output";
@@ -66,7 +71,6 @@ struct ImageReq {
 struct PodcastReq {
     #[serde(default)]
     id: Option<String>,
-    /// 模式 B：先生成脚本
     #[serde(default)]
     script: bool,
     #[serde(default)]
@@ -80,34 +84,12 @@ struct VideoReq {
 }
 
 #[derive(Serialize)]
-struct ApiResp {
-    ok: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    message: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    error: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    artifacts: Option<Vec<Artifact>>,
-}
-
-#[derive(Serialize)]
 struct Artifact {
     name: String,
     size: u64,
     url: String,
 }
 
-fn ok(id: Option<String>, message: Option<String>, artifacts: Option<Vec<Artifact>>) -> ApiResp {
-    ApiResp { ok: true, id, message, error: None, artifacts }
-}
-
-fn err(e: anyhow::Error) -> ApiResp {
-    ApiResp { ok: false, id: None, message: None, error: Some(e.to_string()), artifacts: None }
-}
-
-/// 加载配置 + 解析 LLM provider
 fn load_ctx() -> anyhow::Result<(Config, Box<dyn crate::llm::LlmAgent>)> {
     let cfg = Config::load(&Config::path())?;
     let llm = crate::llm::resolve_llm(&cfg)?;
@@ -119,19 +101,25 @@ fn list_artifacts(id: &str) -> Vec<Artifact> {
     let mut arts = Vec::new();
     if let Ok(entries) = std::fs::read_dir(&dir) {
         for e in entries.flatten() {
-            if e.path().is_file() {
+            if e.path().is_file() && e.file_name().to_string_lossy() != "task.json" {
                 let name = e.file_name().to_string_lossy().to_string();
                 let size = e.metadata().map(|m| m.len()).unwrap_or(0);
-                arts.push(Artifact {
-                    url: format!("/api/files/{id}/{name}"),
-                    name,
-                    size,
-                });
+                arts.push(Artifact { url: format!("/api/files/{id}/{name}"), name, size });
             }
         }
     }
     arts.sort_by(|a, b| a.name.cmp(&b.name));
     arts
+}
+
+fn task_meta_json(id: &str) -> serde_json::Value {
+    let p = Path::new(OUTPUT_ROOT).join(id).join("task.json");
+    std::fs::read_to_string(&p)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_else(|| {
+            json!({"id": id, "status": "unknown", "steps": {}, "artifacts": list_artifacts(id)})
+        })
 }
 
 fn resolve_dir(id: Option<String>) -> anyhow::Result<PathBuf> {
@@ -145,96 +133,148 @@ fn dir_id(dir: &Path) -> String {
     dir.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default()
 }
 
+/// 生成任务 id（改写在时间戳基础上加随机后缀，避免同秒冲突）
+fn gen_id() -> String {
+    let ts = chrono::Local::now().format("%Y%m%d-%H%M%S");
+    let suffix: String = uuid::Uuid::new_v4().simple().to_string().chars().take(4).collect();
+    format!("{ts}-{suffix}")
+}
+
+// ============ 执行端点（后台执行 + 立即返回 task_id） ============
+
 async fn run_pipeline(State(state): State<AppState>, Json(req): Json<RunReq>) -> Response {
-    let _guard = state.run_lock.lock().await;
-    let result = run_pipeline_inner(req).await;
-    match result {
-        Ok(resp) => Json(resp).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(err(e))).into_response(),
-    }
-}
-
-async fn run_pipeline_inner(req: RunReq) -> anyhow::Result<ApiResp> {
-    let (cfg, llm) = load_ctx()?;
-    let prompts = cmd::run::Prompts {
-        rewrite: req.prompt.as_deref(),
-        image: req.image_prompt.as_deref(),
-        podcast: req.podcast_prompt.as_deref(),
+    let (cfg, llm) = match load_ctx() {
+        Ok(x) => x,
+        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"ok": false, "error": e.to_string()}))).into_response(),
     };
-    let id = cmd::run::run_with_config(
-        Path::new(OUTPUT_ROOT),
-        &cfg,
-        llm.as_ref(),
-        &req.text,
-        req.id,
-        req.ref_image.map(PathBuf::from),
-        &prompts,
-    )
-    .await?;
-    Ok(ok(Some(id.clone()), Some("全流程完成".into()), Some(list_artifacts(&id))))
+    let id = req.id.clone().unwrap_or_else(gen_id);
+    let events = TaskEvents::streaming(Path::new(OUTPUT_ROOT), &id);
+    events.init();
+
+    let resp_id = id.clone();
+    let lock = state.run_lock.clone();
+    tokio::spawn(async move {
+        let _guard = lock.lock().await;
+        let prompts = cmd::run::Prompts {
+            rewrite: req.prompt.as_deref(),
+            image: req.image_prompt.as_deref(),
+            podcast: req.podcast_prompt.as_deref(),
+        };
+        // run_with_config 内部已处理 task_done / task_error
+        let _ = cmd::run::run_with_config(
+            Path::new(OUTPUT_ROOT),
+            &cfg,
+            llm.as_ref(),
+            &req.text,
+            &id,
+            req.ref_image.map(PathBuf::from),
+            &prompts,
+            &events,
+        )
+        .await;
+    });
+
+    Json(json!({"ok": true, "id": resp_id})).into_response()
 }
 
-async fn rewrite(Json(req): Json<RewriteReq>) -> Response {
-    let result = async {
-        let (_cfg, llm) = load_ctx()?;
-        let id = cmd::rewrite::run_with(Path::new(OUTPUT_ROOT), &req.text, req.id, llm.as_ref(), req.prompt.as_deref()).await?;
-        let rewritten = std::fs::read_to_string(Path::new(OUTPUT_ROOT).join(&id).join("rewritten.md")).unwrap_or_default();
-        Ok(ok(Some(id.clone()), Some(rewritten), Some(list_artifacts(&id))))
-    }
-    .await;
-    match result {
-        Ok(resp) => Json(resp).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(err(e))).into_response(),
-    }
+async fn rewrite(State(state): State<AppState>, Json(req): Json<RewriteReq>) -> Response {
+    let (_cfg, llm) = match load_ctx() {
+        Ok(x) => x,
+        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"ok": false, "error": e.to_string()}))).into_response(),
+    };
+    let id = req.id.clone().unwrap_or_else(gen_id);
+    let events = TaskEvents::streaming(Path::new(OUTPUT_ROOT), &id);
+    events.init();
+    let lock = state.run_lock.clone();
+    let id2 = id.clone();
+    tokio::spawn(async move {
+        let _guard = lock.lock().await;
+        let r = cmd::rewrite::run_with(Path::new(OUTPUT_ROOT), &req.text, &id2, llm.as_ref(), req.prompt.as_deref(), &events).await;
+        match r {
+            Ok(_) => events.task_done(),
+            Err(e) => events.task_error(&e.to_string()),
+        }
+    });
+    Json(json!({"ok": true, "id": id})).into_response()
 }
 
-async fn image(Json(req): Json<ImageReq>) -> Response {
-    let result = async {
-        let (cfg, llm) = load_ctx()?;
-        let dir = resolve_dir(req.id)?;
-        let provider = provider::resolve_image(&cfg)?;
-        cmd::image::run_with(&dir, req.ref_image.map(PathBuf::from), llm.as_ref(), provider.as_ref(), req.prompt.as_deref()).await?;
-        let id = dir_id(&dir);
-        Ok(ok(Some(id.clone()), Some("生图完成".into()), Some(list_artifacts(&id))))
-    }
-    .await;
-    match result {
-        Ok(resp) => Json(resp).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(err(e))).into_response(),
-    }
+async fn image(State(state): State<AppState>, Json(req): Json<ImageReq>) -> Response {
+    let (cfg, llm) = match load_ctx() {
+        Ok(x) => x,
+        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"ok": false, "error": e.to_string()}))).into_response(),
+    };
+    let dir = match resolve_dir(req.id) {
+        Ok(d) => d,
+        Err(e) => return (StatusCode::BAD_REQUEST, Json(json!({"ok": false, "error": e.to_string()}))).into_response(),
+    };
+    let id = dir_id(&dir);
+    let provider = match provider::resolve_image(&cfg) {
+        Ok(p) => p,
+        Err(e) => return (StatusCode::BAD_REQUEST, Json(json!({"ok": false, "error": e.to_string()}))).into_response(),
+    };
+    let events = TaskEvents::streaming(Path::new(OUTPUT_ROOT), &id);
+    let lock = state.run_lock.clone();
+    tokio::spawn(async move {
+        let _guard = lock.lock().await;
+        let r = cmd::image::run_with(&dir, req.ref_image.map(PathBuf::from), llm.as_ref(), provider.as_ref(), req.prompt.as_deref(), &events).await;
+        match r {
+            Ok(_) => events.task_done(),
+            Err(e) => events.task_error(&e.to_string()),
+        }
+    });
+    Json(json!({"ok": true, "id": id})).into_response()
 }
 
-async fn podcast(Json(req): Json<PodcastReq>) -> Response {
-    let result = async {
-        let (cfg, llm) = load_ctx()?;
-        let dir = resolve_dir(req.id)?;
-        let backend = podcast_backend::resolve_podcast(&cfg)?;
-        cmd::podcast::run_with(&dir, llm.as_ref(), &backend, req.script, req.prompt.as_deref()).await?;
-        let id = dir_id(&dir);
-        Ok(ok(Some(id.clone()), Some("播客完成".into()), Some(list_artifacts(&id))))
-    }
-    .await;
-    match result {
-        Ok(resp) => Json(resp).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(err(e))).into_response(),
-    }
+async fn podcast(State(state): State<AppState>, Json(req): Json<PodcastReq>) -> Response {
+    let (cfg, llm) = match load_ctx() {
+        Ok(x) => x,
+        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"ok": false, "error": e.to_string()}))).into_response(),
+    };
+    let dir = match resolve_dir(req.id) {
+        Ok(d) => d,
+        Err(e) => return (StatusCode::BAD_REQUEST, Json(json!({"ok": false, "error": e.to_string()}))).into_response(),
+    };
+    let id = dir_id(&dir);
+    let backend = match podcast_backend::resolve_podcast(&cfg) {
+        Ok(b) => b,
+        Err(e) => return (StatusCode::BAD_REQUEST, Json(json!({"ok": false, "error": e.to_string()}))).into_response(),
+    };
+    let events = TaskEvents::streaming(Path::new(OUTPUT_ROOT), &id);
+    let lock = state.run_lock.clone();
+    tokio::spawn(async move {
+        let _guard = lock.lock().await;
+        let r = cmd::podcast::run_with(&dir, llm.as_ref(), &backend, req.script, req.prompt.as_deref(), &events).await;
+        match r {
+            Ok(_) => events.task_done(),
+            Err(e) => events.task_error(&e.to_string()),
+        }
+    });
+    Json(json!({"ok": true, "id": id})).into_response()
 }
 
-async fn video(Json(req): Json<VideoReq>) -> Response {
-    let result = async {
-        let dir = resolve_dir(req.id)?;
-        // ffmpeg 视频合成为 CPU 密集且耗时，放到阻塞线程池
+async fn video(State(state): State<AppState>, Json(req): Json<VideoReq>) -> Response {
+    let dir = match resolve_dir(req.id) {
+        Ok(d) => d,
+        Err(e) => return (StatusCode::BAD_REQUEST, Json(json!({"ok": false, "error": e.to_string()}))).into_response(),
+    };
+    let id = dir_id(&dir);
+    let events = TaskEvents::streaming(Path::new(OUTPUT_ROOT), &id);
+    let lock = state.run_lock.clone();
+    tokio::spawn(async move {
+        let _guard = lock.lock().await;
+        let events2 = events.clone();
         let dir2 = dir.clone();
-        tokio::task::spawn_blocking(move || cmd::video::run_with(&dir2)).await??;
-        let id = dir_id(&dir);
-        Ok(ok(Some(id.clone()), Some("视频完成".into()), Some(list_artifacts(&id))))
-    }
-    .await;
-    match result {
-        Ok(resp) => Json(resp).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(err(e))).into_response(),
-    }
+        let r = tokio::task::spawn_blocking(move || cmd::video::run_with(&dir2, &events2)).await;
+        match r {
+            Ok(Ok(())) => events.task_done(),
+            Ok(Err(e)) => events.task_error(&e.to_string()),
+            Err(e) => events.task_error(&e.to_string()),
+        }
+    });
+    Json(json!({"ok": true, "id": id})).into_response()
 }
+
+// ============ 查询端点 ============
 
 async fn list_tasks() -> Response {
     let mut tasks = Vec::new();
@@ -242,7 +282,11 @@ async fn list_tasks() -> Response {
         for e in entries.flatten() {
             if e.path().is_dir() {
                 let id = e.file_name().to_string_lossy().to_string();
-                tasks.push(json!({"id": id, "artifacts": list_artifacts(&id)}));
+                let mut m = task_meta_json(&id);
+                if let Some(obj) = m.as_object_mut() {
+                    obj.insert("artifacts".into(), json!(list_artifacts(&id)));
+                }
+                tasks.push(m);
             }
         }
     }
@@ -251,11 +295,36 @@ async fn list_tasks() -> Response {
 }
 
 async fn task_info(AxPath(id): AxPath<String>) -> Response {
-    Json(json!({"ok": true, "id": id, "artifacts": list_artifacts(&id)})).into_response()
+    let mut m = task_meta_json(&id);
+    if let Some(obj) = m.as_object_mut() {
+        obj.insert("artifacts".into(), json!(list_artifacts(&id)));
+    }
+    Json(m).into_response()
+}
+
+/// SSE：订阅任务事件流
+async fn task_events(AxPath(id): AxPath<String>) -> Response {
+    match crate::task::subscribe(&id) {
+        Some(rx) => {
+            let stream = futures_util::stream::unfold(rx, |mut rx| async move {
+                loop {
+                    match rx.recv().await {
+                        Ok(ev) => {
+                            let data = serde_json::to_string(&ev).unwrap_or_default();
+                            return Some((Ok::<_, Infallible>(SseEvent::default().data(data)), rx));
+                        }
+                        Err(RecvError::Lagged(_)) => continue,
+                        Err(RecvError::Closed) => return None,
+                    }
+                }
+            });
+            Sse::new(stream).into_response()
+        }
+        None => (StatusCode::NOT_FOUND, "任务不存在或已结束").into_response(),
+    }
 }
 
 async fn download(AxPath((id, name)): AxPath<(String, String)>) -> Response {
-    // 防路径穿越
     if name.contains("..") || name.contains('/') || name.contains('\\') {
         return (StatusCode::BAD_REQUEST, "非法文件名").into_response();
     }
@@ -283,9 +352,8 @@ async fn download(AxPath((id, name)): AxPath<(String, String)>) -> Response {
     }
 }
 
-/// 参考图上传（multipart，字段名 file），保存到 uploads/，返回绝对路径
-/// 参考图上传（multipart，字段名 file），保存到 uploads/，返回绝对路径
-async fn upload(mut multipart: axum::extract::Multipart) -> Response {    let result = async {
+async fn upload(mut multipart: axum::extract::Multipart) -> Response {
+    let result = async {
         let mut saved: Option<String> = None;
         while let Some(field) = multipart.next_field().await? {
             if field.name() != Some("file") {
@@ -294,10 +362,7 @@ async fn upload(mut multipart: axum::extract::Multipart) -> Response {    let re
             let filename = field.file_name().unwrap_or("upload").to_string();
             let data = field.bytes().await?;
             anyhow::ensure!(!data.is_empty(), "上传文件为空");
-            let ext = Path::new(&filename)
-                .extension()
-                .and_then(|e| e.to_str())
-                .unwrap_or("png");
+            let ext = Path::new(&filename).extension().and_then(|e| e.to_str()).unwrap_or("png");
             let safe: String = filename
                 .chars()
                 .filter(|c| c.is_alphanumeric() || *c == '-' || *c == '_' || *c == '.')
@@ -318,7 +383,7 @@ async fn upload(mut multipart: axum::extract::Multipart) -> Response {    let re
     .await;
     match result {
         Ok(resp) => resp.into_response(),
-        Err(e) => (StatusCode::BAD_REQUEST, Json(err(e))).into_response(),
+        Err(e) => (StatusCode::BAD_REQUEST, Json(json!({"ok": false, "error": e.to_string()}))).into_response(),
     }
 }
 
@@ -326,43 +391,32 @@ async fn ui() -> Html<&'static str> {
     Html(include_str!("../web/index.html"))
 }
 
-/// 列出 pi 可用的语言模型
 async fn pi_models() -> Vec<String> {
-    match pi_rpc::rpc_once(
-        Path::new("pi"),
-        None,
-        json!({"type": "get_available_models"}),
-    )
-    .await
-    {
+    match pi_rpc::rpc_once(Path::new("pi"), None, json!({"type": "get_available_models"})).await {
         Ok(data) => wizard::parse_available_models(&data),
         Err(_) => vec![],
     }
 }
 
-/// 读取配置（含 pi 可用模型）
 async fn get_config() -> Response {
     let cfg = Config::load(&Config::path()).unwrap_or_default();
     let models = pi_models().await;
     Json(json!({"ok": true, "config": cfg, "models": models})).into_response()
 }
 
-/// 保存配置
 async fn put_config(Json(cfg): Json<Config>) -> Response {
     match cfg.save(&Config::path()) {
         Ok(()) => Json(json!({"ok": true})).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(err(e))).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"ok": false, "error": e.to_string()}))).into_response(),
     }
 }
 
-/// 拉取 OpenAI 兼容 provider 的模型列表（GET {base_url}/models）
 async fn fetch_models(Json(req): Json<FetchModelsReq>) -> Response {
     let result = async {
         let url = format!("{}/models", req.base_url.trim_end_matches('/'));
         let client = reqwest::Client::builder().no_proxy().build()?;
         let resp = client.get(&url).bearer_auth(&req.api_key).send().await?;
-        anyhow::ensure!(resp.status().is_success(),
-            "拉取模型失败: HTTP {} {}", resp.status(), resp.text().await.unwrap_or_default());
+        anyhow::ensure!(resp.status().is_success(), "拉取模型失败: HTTP {} {}", resp.status(), resp.text().await.unwrap_or_default());
         let v: serde_json::Value = resp.json().await?;
         let mut models: Vec<String> = v["data"]
             .as_array()
@@ -374,7 +428,7 @@ async fn fetch_models(Json(req): Json<FetchModelsReq>) -> Response {
     .await;
     match result {
         Ok(resp) => resp.into_response(),
-        Err(e) => (StatusCode::BAD_REQUEST, Json(err(e))).into_response(),
+        Err(e) => (StatusCode::BAD_REQUEST, Json(json!({"ok": false, "error": e.to_string()}))).into_response(),
     }
 }
 
@@ -395,6 +449,7 @@ pub async fn run(port: u16) -> anyhow::Result<()> {
         .route("/api/video", post(video))
         .route("/api/tasks", get(list_tasks))
         .route("/api/tasks/:id", get(task_info))
+        .route("/api/tasks/:id/events", get(task_events))
         .route("/api/files/:id/:name", get(download))
         .route("/api/upload", post(upload))
         .route("/api/fetch-models", post(fetch_models))
