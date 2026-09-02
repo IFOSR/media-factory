@@ -4,9 +4,29 @@ use base64::Engine as _;
 
 use crate::config::{BuiltinKind, Config, ProviderConfig};
 
+/// 生图尺寸（比例）选择
+#[derive(Clone, Copy, PartialEq, Debug, Default)]
+pub enum ImageSize {
+    #[default]
+    Square,
+    Portrait,
+    Landscape,
+}
+
+impl ImageSize {
+    pub fn parse(s: &str) -> Self {
+        match s {
+            "portrait" => ImageSize::Portrait,
+            "landscape" => ImageSize::Landscape,
+            _ => ImageSize::Square,
+        }
+    }
+}
+
 pub struct ImageRequest {
     pub prompt: String,
     pub reference_images: Vec<PathBuf>,
+    pub size: ImageSize,
 }
 
 #[async_trait::async_trait]
@@ -59,9 +79,17 @@ impl ImageProvider for GeminiImage {
             }));
         }
 
+        let aspect = match req.size {
+            ImageSize::Square => "1:1",
+            ImageSize::Portrait => "9:16",
+            ImageSize::Landscape => "16:9",
+        };
         let body = serde_json::json!({
             "contents": [{"role": "user", "parts": parts}],
-            "generationConfig": {"responseModalities": ["TEXT", "IMAGE"]}
+            "generationConfig": {
+                "responseModalities": ["TEXT", "IMAGE"],
+                "imageConfig": {"aspectRatio": aspect}
+            }
         });
 
         let resp = self
@@ -146,7 +174,12 @@ impl ImageProvider for OpenAiImages {
         let mut body = serde_json::Map::new();
         body.insert("model".into(), self.model.clone().into());
         body.insert("prompt".into(), req.prompt.clone().into());
-        body.insert("size".into(), "1024x1024".into());
+        let size = match req.size {
+            ImageSize::Square => "1024x1024",
+            ImageSize::Portrait => "1024x1536",
+            ImageSize::Landscape => "1536x1024",
+        };
+        body.insert("size".into(), size.into());
         for (k, v) in &self.extra_body {
             body.insert(k.clone(), v.clone());
         }
@@ -291,6 +324,7 @@ mod tests {
             .generate(&ImageRequest {
                 prompt: "一只猫".into(),
                 reference_images: vec![write_temp_png(dir.path())],
+                size: ImageSize::Square,
             })
             .await
             .unwrap();
@@ -317,6 +351,7 @@ mod tests {
             .generate(&ImageRequest {
                 prompt: "一只猫".into(),
                 reference_images: vec![],
+                size: ImageSize::Square,
             })
             .await
             .unwrap();
@@ -351,6 +386,7 @@ mod tests {
             .generate(&ImageRequest {
                 prompt: "一只猫".into(),
                 reference_images: vec![],
+                size: ImageSize::Square,
             })
             .await
             .unwrap();

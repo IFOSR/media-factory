@@ -16,6 +16,7 @@ pub struct Prompts<'a> {
 
 /// 串联执行全部四步：改写 → 生图 → 播客 → 视频。
 /// 任一步失败即停止，可用 `--id <id> <失败子命令>` 续跑。
+#[allow(clippy::too_many_arguments)]
 pub async fn run(
     input: Option<String>,
     id: Option<String>,
@@ -24,6 +25,7 @@ pub async fn run(
     image_prompt: Option<String>,
     podcast_prompt: Option<String>,
     disclaimer: bool,
+    size: Option<String>,
 ) -> anyhow::Result<String> {
     let cfg = Config::load(&Config::path())?;
     let llm = crate::llm::resolve_llm(&cfg)?;
@@ -36,6 +38,7 @@ pub async fn run(
         image: image_prompt.as_deref(),
         podcast: podcast_prompt.as_deref(),
     };
+    let size = size.as_deref().map(provider::ImageSize::parse).unwrap_or_default();
     run_with_config(
         Path::new("output"),
         &cfg,
@@ -47,6 +50,7 @@ pub async fn run(
         &events,
         None,
         disclaimer,
+        size,
     )
     .await
 }
@@ -64,6 +68,7 @@ pub async fn run_with_config(
     events: &TaskEvents,
     podcast_speakers: Option<Vec<String>>,
     disclaimer: bool,
+    size: provider::ImageSize,
 ) -> anyhow::Result<String> {
     let id = match rewrite::run_with(output_root, source, id, llm, prompts.rewrite, events).await {
         Ok(id) => id,
@@ -83,7 +88,7 @@ pub async fn run_with_config(
             return Err(e);
         }
     };
-    if let Err(e) = image::run_with(&dir, reference, llm, img_provider.as_ref(), prompts.image, events, disclaimer).await {
+    if let Err(e) = image::run_with(&dir, reference, llm, img_provider.as_ref(), prompts.image, events, disclaimer, size).await {
         events.step_failed(Step::Image, &e.to_string());
         events.task_error(&e.to_string());
         return Err(e);
@@ -242,7 +247,7 @@ done
         let root = dir.path().join("output");
         let events = crate::task::TaskEvents::local(&root, "e2e1");
 
-        run_with_config(&root, &cfg, &llm, "原始参考内容", "e2e1", vec![], &Prompts { rewrite: None, image: None, podcast: None }, &events, None, false)
+        run_with_config(&root, &cfg, &llm, "原始参考内容", "e2e1", vec![], &Prompts { rewrite: None, image: None, podcast: None }, &events, None, false, provider::ImageSize::Square)
             .await
             .unwrap();
 

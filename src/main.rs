@@ -41,6 +41,8 @@ enum Commands {
         #[arg(long)] prompt: Option<String>,
         /// 生成后叠加免责声明「以上内容仅代表个人观点。不构成投资建议。」
         #[arg(long)] disclaimer: bool,
+        /// 尺寸：square(方形) / portrait(手机竖屏 9:16) / landscape(横屏 16:9)
+        #[arg(long, value_parser = ["square", "portrait", "landscape"])] size: Option<String>,
     },
     /// 步骤 3：基于改写文案生成播客
     Podcast {
@@ -68,6 +70,8 @@ enum Commands {
         #[arg(long)] podcast_prompt: Option<String>,
         /// 生成后叠加免责声明「以上内容仅代表个人观点。不构成投资建议。」
         #[arg(long)] disclaimer: bool,
+        /// 尺寸：square(方形) / portrait(手机竖屏 9:16) / landscape(横屏 16:9)
+        #[arg(long, value_parser = ["square", "portrait", "landscape"])] size: Option<String>,
     },
     /// 启动 Web 服务（功能与 CLI 一致）
     Serve {
@@ -103,8 +107,8 @@ async fn main() -> anyhow::Result<()> {
         Commands::Rewrite { input, id, prompt } => {
             cmd::rewrite::run(input, id, prompt).await?;
         }
-        Commands::Image { id, r#ref, prompt, disclaimer } => {
-            cmd::image::run(id, r#ref, prompt, disclaimer).await?;
+        Commands::Image { id, r#ref, prompt, disclaimer, size } => {
+            cmd::image::run(id, r#ref, prompt, disclaimer, size).await?;
         }
         Commands::Podcast { id, script, prompt } => {
             cmd::podcast::run(id, script, prompt).await?;
@@ -112,8 +116,8 @@ async fn main() -> anyhow::Result<()> {
         Commands::Video { id } => {
             cmd::video::run(id)?;
         }
-        Commands::Run { input, id, r#ref, prompt, image_prompt, podcast_prompt, disclaimer } => {
-            cmd::run::run(input, id, r#ref, prompt, image_prompt, podcast_prompt, disclaimer).await?;
+        Commands::Run { input, id, r#ref, prompt, image_prompt, podcast_prompt, disclaimer, size } => {
+            cmd::run::run(input, id, r#ref, prompt, image_prompt, podcast_prompt, disclaimer, size).await?;
         }
         Commands::Serve { port } => {
             server::run(port).await?;

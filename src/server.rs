@@ -56,6 +56,9 @@ struct RunReq {
     // 生图后叠加免责声明
     #[serde(default)]
     disclaimer: bool,
+    // 生图尺寸：square / portrait / landscape
+    #[serde(default)]
+    size: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -77,6 +80,8 @@ struct ImageReq {
     prompt: Option<String>,
     #[serde(default)]
     disclaimer: bool,
+    #[serde(default)]
+    size: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -213,6 +218,7 @@ async fn run_pipeline(State(state): State<AppState>, Json(req): Json<RunReq>) ->
             podcast: req.podcast_prompt.as_deref(),
         };
         let speakers = build_speakers(req.speaker_count, req.speaker1, req.speaker2);
+        let size = req.size.as_deref().map(crate::provider::ImageSize::parse).unwrap_or_default();
         // run_with_config 内部已处理 task_done / task_error
         let _ = cmd::run::run_with_config(
             Path::new(OUTPUT_ROOT),
@@ -225,6 +231,7 @@ async fn run_pipeline(State(state): State<AppState>, Json(req): Json<RunReq>) ->
             &events,
             speakers,
             req.disclaimer,
+            size,
         )
         .await;
     });
@@ -271,7 +278,8 @@ async fn image(State(state): State<AppState>, Json(req): Json<ImageReq>) -> Resp
     let lock = state.run_lock.clone();
     tokio::spawn(async move {
         let _guard = lock.lock().await;
-        let r = cmd::image::run_with(&dir, req.ref_images.into_iter().map(PathBuf::from).collect(), llm.as_ref(), provider.as_ref(), req.prompt.as_deref(), &events, req.disclaimer).await;
+        let size = req.size.as_deref().map(crate::provider::ImageSize::parse).unwrap_or_default();
+        let r = cmd::image::run_with(&dir, req.ref_images.into_iter().map(PathBuf::from).collect(), llm.as_ref(), provider.as_ref(), req.prompt.as_deref(), &events, req.disclaimer, size).await;
         match r {
             Ok(_) => events.task_done(),
             Err(e) => events.task_error(&e.to_string()),

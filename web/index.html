@@ -89,6 +89,9 @@
   .refitem button.x:hover { color:var(--err, #e11); }
   label.check { display:flex; align-items:center; gap:6px; font-size:13px; color:var(--muted); margin-top:6px; cursor:pointer; }
   label.check input { accent-color:var(--amber); width:15px; height:15px; }
+  .rowline { display:flex; align-items:center; gap:16px; flex-wrap:wrap; margin-top:6px; }
+  .rowline select { background:var(--bg2); border:1px solid var(--line); border-radius:6px; color:var(--text);
+    padding:4px 8px; font-size:13px; }
 
   #status { margin-top:12px; font-size:13px; color:var(--muted); white-space:pre-wrap; min-height:20px; }
   #status.err { color:var(--err); }
@@ -184,7 +187,17 @@
       <div class="field">
         <label>生图要求（可选） <button class="ghost small" id="imgBtn">📎 上传参考图</button><input type="file" id="file" accept="image/*" hidden multiple></label>
         <textarea id="imagePrompt" class="small" placeholder="如：扁平插画风，暖色调"></textarea>
-        <label class="check"><input type="checkbox" id="disclaimer"> 在图片上追加「以上内容仅代表个人观点。不构成投资建议。」（规避投资类内容法律风险）</label>
+        <div class="rowline">
+          <label class="check" style="margin:0">尺寸
+            <select id="imgSize">
+              <option value="square">方形 1:1（默认）</option>
+              <option value="portrait">手机竖屏 9:16</option>
+              <option value="landscape">横屏 16:9</option>
+            </select>
+          </label>
+          <label class="check" style="margin:0"><input type="checkbox" id="disclaimer"> 追加免责声明</label>
+        </div>
+        <div class="hint">免责声明：以上内容仅代表个人观点。不构成投资建议。</div>
         <div id="refList"></div>
       </div>
       <div class="field">
@@ -378,6 +391,7 @@ function newTask() {
   document.getElementById('speaker2').value = '';
   document.getElementById('speaker2').style.display = 'block';
   document.getElementById('disclaimer').checked = false;
+  document.getElementById('imgSize').value = 'square';
   state.refImages = [];
   renderRefImages();
   document.getElementById('result').innerHTML = '<div class="empty">尚未开始，点击上方「一键全流程」或「仅改写」</div>';
@@ -424,6 +438,7 @@ async function run(step) {
   else if (state.currentId && step !== 'rewrite' && step !== 'run') body.id = state.currentId;
   if ((step === 'run' || step === 'image') && state.refImages.length) body.ref_images = state.refImages;
   if ((step === 'run' || step === 'image') && document.getElementById('disclaimer').checked) body.disclaimer = true;
+  if (step === 'run' || step === 'image') body.size = document.getElementById('imgSize').value;
 
   setStatus('<span class="spin"></span>启动任务…');
 

@@ -36,6 +36,7 @@ pub async fn distill_prompt(
 pub const DISCLAIMER_TEXT: &str = "以上内容仅代表个人观点。不构成投资建议。";
 
 /// 核心流程（可注入 llm 与 provider 以便测试）
+#[allow(clippy::too_many_arguments)]
 pub async fn run_with(
     dir: &Path,
     reference: Vec<PathBuf>,
@@ -44,6 +45,7 @@ pub async fn run_with(
     user_prompt: Option<&str>,
     events: &TaskEvents,
     disclaimer: bool,
+    size: crate::provider::ImageSize,
 ) -> anyhow::Result<()> {
     let rewritten_path = dir.join("rewritten.md");
     anyhow::ensure!(
@@ -66,6 +68,7 @@ pub async fn run_with(
         .generate(&ImageRequest {
             prompt: img_prompt,
             reference_images: reference,
+            size,
         })
         .await?;
 
@@ -92,6 +95,7 @@ pub async fn run(
     reference: Vec<String>,
     user_prompt: Option<String>,
     disclaimer: bool,
+    size: Option<String>,
 ) -> anyhow::Result<String> {
     let dir = match &id {
         Some(i) => super::task_dir(Path::new("output"), i),
@@ -106,6 +110,7 @@ pub async fn run(
     let llm = crate::llm::resolve_llm(&cfg)?;
     let provider = provider::resolve_image(&cfg)?;
     let events = crate::task::TaskEvents::local(Path::new("output"), &id);
-    run_with(&dir, reference, llm.as_ref(), provider.as_ref(), user_prompt.as_deref(), &events, disclaimer).await?;
+    let size = size.as_deref().map(provider::ImageSize::parse).unwrap_or_default();
+    run_with(&dir, reference, llm.as_ref(), provider.as_ref(), user_prompt.as_deref(), &events, disclaimer, size).await?;
     Ok(id)
 }
