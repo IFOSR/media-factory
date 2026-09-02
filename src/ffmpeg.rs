@@ -52,7 +52,7 @@ fn probe_image_width(image: &Path) -> Option<u32> {
     String::from_utf8_lossy(&out.stdout).trim().parse().ok()
 }
 
-/// 在图片底部叠加免责声明文字（白字 + 半透明黑底条，居中）；输出写入 out
+/// 在图片右上角叠加免责声明文字（黄色小字 + 黑描边，不遮挡主体内容）；输出写入 out
 pub fn overlay_disclaimer(image: &Path, text: &str, out: &Path) -> anyhow::Result<()> {
     let font = find_cjk_font()
         .ok_or_else(|| anyhow::anyhow!("未找到中文字体，无法在图片上叠加免责声明"))?;
@@ -61,19 +61,20 @@ pub fn overlay_disclaimer(image: &Path, text: &str, out: &Path) -> anyhow::Resul
     std::fs::write(&textfile, text)?;
 
     let width = probe_image_width(image).unwrap_or(1024);
-    let fontsize = (width / 26).clamp(28, 96);
-    let border = (fontsize / 3).max(8);
-    let margin_bottom = fontsize * 2;
+    // 小字号，按宽度自适应但保持克制（1024px → 约 25px）
+    let fontsize = (width / 40).clamp(16, 36);
+    let margin = (fontsize / 2).max(10);
 
     // 路径转义：drawtext 参数用单引号包裹，内部转义冒号与单引号
     let esc = |s: &str| s.replace(':', "\\:").replace('\'', "\\'");
+    // 右上角：黄色文字 + 黑色描边，无背景框，尽量不遮挡内容
     let vf = format!(
-        "drawtext=fontfile='{}':textfile='{}':fontcolor=white:fontsize={}:box=1:boxcolor=black@0.55:boxborderw={}:x=(w-text_w)/2:y=h-text_h-{}",
+        "drawtext=fontfile='{}':textfile='{}':fontcolor=yellow:fontsize={}:borderw=2:bordercolor=black@0.8:x=w-text_w-{}:y={}",
         esc(&font.to_string_lossy()),
         esc(&textfile.to_string_lossy()),
         fontsize,
-        border,
-        margin_bottom,
+        margin,
+        margin,
     );
 
     let status = Command::new(ffmpeg_bin())
