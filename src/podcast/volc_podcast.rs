@@ -29,13 +29,13 @@ pub enum PodcastResult {
 pub struct VolcPodcast {
     appid: String,
     access_token: String,
-    speakers: (String, String),
+    speakers: Vec<String>,
     ws_url: String,
     client: reqwest::Client,
 }
 
 impl VolcPodcast {
-    pub fn new(appid: String, access_token: String, speakers: (String, String)) -> Self {
+    pub fn new(appid: String, access_token: String, speakers: Vec<String>) -> Self {
         Self {
             appid,
             access_token,
@@ -45,17 +45,17 @@ impl VolcPodcast {
         }
     }
 
-    /// 当前配置的两个发音人 (host, guest)
-    pub fn speakers(&self) -> (String, String) {
+    /// 当前配置的发音人（1~2 个）
+    pub fn speakers(&self) -> Vec<String> {
         self.speakers.clone()
     }
 
     /// 把音色 ID 映射成友好称呼
     fn speaker_label(&self, speaker: &str) -> String {
-        if speaker == self.speakers.0 {
-            "主持人".to_string()
-        } else if speaker == self.speakers.1 {
+        if self.speakers.len() > 1 && speaker == self.speakers[1] {
             "嘉宾".to_string()
+        } else if self.speakers.first().map(|s| s == speaker).unwrap_or(false) {
+            "主持人".to_string()
         } else {
             speaker.to_string()
         }
@@ -71,7 +71,7 @@ impl VolcPodcast {
                 "use_head_music": false,
                 "use_tail_music": false,
                 "audio_config": {"format": "mp3", "sample_rate": 24000, "speech_rate": 0},
-                "speaker_info": {"random_order": true, "speakers": [self.speakers.0, self.speakers.1]},
+                "speaker_info": {"random_order": true, "speakers": self.speakers.clone()},
                 "aigc_watermark": false,
                 "aigc_metadata": {"enable": true, "content_producer": "volcengine", "produce_id": "12abc", "content_propagator": "volcengine", "propagate_id": "34def"},
                 "input_info": {
@@ -87,7 +87,7 @@ impl VolcPodcast {
                 "nlp_texts": req.nlp_texts,
                 "use_head_music": false,
                 "use_tail_music": false,
-                "speaker_info": {"speakers": [self.speakers.0, self.speakers.1]},
+                "speaker_info": {"speakers": self.speakers.clone()},
                 "audio_config": {"format": "mp3", "sample_rate": 24000},
                 "input_info": {"return_audio_url": true}
             })

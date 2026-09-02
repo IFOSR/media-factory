@@ -16,18 +16,34 @@ pub struct SubtitleEntry {
     pub text: String,
 }
 
-/// 把一段话按句子/长度切分成适合字幕的短行（每行约 max_chars 字以内）
+/// 把一段话按句子/长度切分成适合字幕的短行（每行约 max_chars 字以内）。
+/// 中文按标点/字数断；英文按词边界断，不在单词中间拆行。
 pub fn split_subtitle_text(text: &str, max_chars: usize) -> Vec<String> {
     let mut lines = Vec::new();
     let mut cur = String::new();
     for ch in text.chars() {
         cur.push(ch);
         let n = cur.chars().count();
-        // 句末标点必断；逗号在行接近满时断；行满硬切
+        // 句末标点必断；逗号在行接近满时断；行满时回退到词边界硬切
         let hard = matches!(ch, '。' | '！' | '？' | '；' | '…');
         let soft = matches!(ch, '，' | '、');
         let should_break = hard || (soft && n >= max_chars - 4) || n >= max_chars;
         if should_break {
+            if n >= max_chars && !hard && !soft {
+                // 行满硬切：若切在英文单词中间，回退到上一个空格
+                if let Some(ws_pos) = cur.rfind(' ') {
+                    let tail: String = cur[ws_pos + 1..].to_string();
+                    // 仅当尾串是纯 ASCII 字母（英文单词片段）时回退，避免误伤中文
+                    if !tail.is_empty() && tail.chars().all(|c| c.is_ascii_alphabetic()) {
+                        let head = cur[..ws_pos].trim().to_string();
+                        if !head.is_empty() {
+                            lines.push(head);
+                        }
+                        cur = tail;
+                        continue;
+                    }
+                }
+            }
             let line = cur.trim().to_string();
             if !line.is_empty() {
                 lines.push(line);
@@ -127,19 +143,24 @@ pub fn resolve_podcast(cfg: &Config) -> anyhow::Result<PodcastBackend> {
                 .get("appid")
                 .cloned()
                 .ok_or_else(|| anyhow::anyhow!("volc-podcast 缺少 appid，请在配置向导中补全"))?;
-            let speaker_a = extra
-                .get("speaker1")
-                .cloned()
-                .unwrap_or_else(|| DEFAULT_SPEAKER_A.to_string());
-            let speaker_b = extra
-                .get("speaker2")
-                .cloned()
-                .unwrap_or_else(|| DEFAULT_SPEAKER_B.to_string());
-            Ok(PodcastBackend::Volc(VolcPodcast::new(
-                appid,
-                api_key.clone(),
-                (speaker_a, speaker_b),
-            )))
+            // 人数：1 或 2（默认 2）
+            let count = extra
+                .get("speaker_count")
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or(2)
+                .clamp(1, 2);
+            let mut speakers = Vec::new();
+            if count >= 1 {
+                speakers.push(
+                    extra.get("speaker1").cloned().unwrap_or_else(|| DEFAULT_SPEAKER_A.to_string()),
+                );
+            }
+            if count >= 2 {
+                speakers.push(
+                    extra.get("speaker2").cloned().unwrap_or_else(|| DEFAULT_SPEAKER_B.to_string()),
+                );
+            }
+            Ok(PodcastBackend::Volc(VolcPodcast::new(appid, api_key.clone(), speakers)))
         }
         _ => Ok(PodcastBackend::Tts(tts::resolve_tts(cfg)?)),
     }

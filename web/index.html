@@ -505,10 +505,16 @@ const IMAGE_BUILTINS = [
   { key:'doubao-seedream', label:'doubao-seedream（豆包生图）' },
 ];
 const PODCAST_BUILTINS = [
-  { key:'volc-podcast', label:'volc-podcast（火山播客大模型，推荐）', extra:['appid'] },
+  { key:'volc-podcast', label:'volc-podcast（火山播客大模型，推荐）', extra:['appid','speaker_count','speaker1','speaker2'] },
   { key:'openai-tts', label:'openai-tts（通用 TTS）' },
   { key:'gemini-tts', label:'gemini-tts（通用 TTS）' },
   { key:'volc-tts', label:'volc-tts（火山豆包语音）', extra:['appid'] },
+];
+const PODCAST_VOICES = [
+  { id:'zh_female_mizaitongxue_v2_saturn_bigtts', label:'黑猫侦探社·咪仔（女）' },
+  { id:'zh_male_dayixiansheng_v2_saturn_bigtts', label:'大医先生（男）' },
+  { id:'zh_male_liufei_v2_saturn_bigtts', label:'刘飞（男）' },
+  { id:'zh_male_xiaolei_v2_saturn_bigtts', label:'潇磊（男）' },
 ];
 let CFG = null, CFG_MODELS = [], PM_KIND = null, PM_PROVIDER = null;
 
@@ -577,7 +583,21 @@ function renderProviderFields(){
   const meta = builtinMeta(key);
   if (meta) {
     html += pmField('API Key / Access Token','pmApiKey', p?.api_key||'', true);
-    for (const ek of (meta.extra||[])) html += pmField(ek.toUpperCase(),'pm_'+ek, p?.extra?.[ek]||'', false);
+    for (const ek of (meta.extra||[])) {
+      if (ek === 'speaker_count') {
+        const cur = p?.extra?.speaker_count || '2';
+        html += `<div style="margin-bottom:10px"><label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">人数</label><select id="pm_speaker_count"><option value="1">1 人（单人播报）</option><option value="2">2 人（双人对话）</option></select></div>`;
+        setTimeout(()=>{ document.getElementById('pm_speaker_count').value = cur; },0);
+      } else if (ek === 'speaker1' || ek === 'speaker2') {
+        const cur = p?.extra?.[ek] || '';
+        let opts = '<option value="">默认音色</option>';
+        for (const v of PODCAST_VOICES) opts += `<option value="${v.id}">${v.label}</option>`;
+        html += `<div style="margin-bottom:10px"><label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">${ek==='speaker1'?'主持人音色':'嘉宾音色'}</label><select id="pm_${ek}">${opts}</select></div>`;
+        setTimeout(()=>{ document.getElementById('pm_'+ek).value = cur; },0);
+      } else {
+        html += pmField(ek.toUpperCase(),'pm_'+ek, p?.extra?.[ek]||'', false);
+      }
+    }
   } else {
     html += pmField('BaseURL','pmBase', p?.base_url||'', false);
     html += pmField('API Key','pmApiKey', p?.api_key||'', true);

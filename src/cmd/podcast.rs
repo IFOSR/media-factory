@@ -80,7 +80,9 @@ async fn run_volc(
     if script_path.exists() {
         let script = std::fs::read_to_string(script_path)?;
         let turns = podcast::parse_script(&script)?;
-        let (sa, sb) = v.speakers();
+        let speakers = v.speakers();
+        let sa = speakers.first().cloned().unwrap_or_default();
+        let sb = speakers.get(1).cloned().unwrap_or_else(|| sa.clone());
         let nlp_texts = podcast::to_nlp_texts(&turns, &sa, &sb);
         let res = v
             .generate(&PodcastRequest {

@@ -71,9 +71,9 @@ pub fn make_video(image: &Path, audio: &Path, subtitle: Option<&Path>, out: &Pat
         );
         // 转义路径中的特殊字符（subtitles 滤镜要求）
         let p = srt.to_string_lossy().replace('\\', "/").replace(':', "\\:");
-        // 字幕：小号字体、白字 + 黑描边（无底框），底部居中，单行
+        // 字幕：白字 + 黑描边（无底框），底部居中，单行，智能换行不拆单词
         let vf = format!(
-            "subtitles='{p}':force_style='FontName=Hiragino Sans GB,FontSize=11,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2,Shadow=0,BorderStyle=1,Alignment=2,MarginV=40'"
+            "subtitles='{p}':force_style='FontName=Hiragino Sans GB,FontSize=13,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2,Shadow=0,BorderStyle=1,Alignment=2,MarginV=40,WrapStyle=0'"
         );
         cmd.args(["-vf", &vf]);
     }
