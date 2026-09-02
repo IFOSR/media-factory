@@ -387,8 +387,16 @@ async fn upload(mut multipart: axum::extract::Multipart) -> Response {
     }
 }
 
-async fn ui() -> Html<&'static str> {
-    Html(include_str!("../web/index.html"))
+async fn ui() -> Response {
+    // 禁止缓存，避免浏览器展示旧页面
+    (
+        [
+            (axum::http::header::CACHE_CONTROL, "no-cache, no-store, must-revalidate"),
+            (axum::http::header::PRAGMA, "no-cache"),
+        ],
+        Html(include_str!("../web/index.html")),
+    )
+        .into_response()
 }
 
 async fn pi_models() -> Vec<String> {

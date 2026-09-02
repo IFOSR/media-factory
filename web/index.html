@@ -150,6 +150,7 @@
     <h1>Media Factory</h1>
     <span class="sub">自媒体内容生产线：改写 · 生图 · 播客 · 视频（含字幕）</span>
     <span class="spacer"></span>
+    <button class="iconbtn" onclick="newTask()">＋ 新建任务</button>
     <button class="iconbtn" onclick="toggleTheme()">🌓 主题</button>
     <button class="iconbtn" onclick="openConfig()">⚙ 配置</button>
   </div>
@@ -297,6 +298,21 @@ async function upload(file) {
 }
 
 function setStatus(msg, isErr) { const el = document.getElementById('status'); el.className = isErr ? 'err' : ''; el.innerHTML = msg; }
+
+// ===== 新建任务：清空工作区，进入新任务输入态 =====
+function newTask() {
+  if (state.es) { state.es.close(); state.es = null; }
+  state.currentId = null;
+  document.getElementById('text').value = '';
+  document.getElementById('prompt').value = '';
+  document.getElementById('imagePrompt').value = '';
+  document.getElementById('podcastPrompt').value = '';
+  document.getElementById('taskId').value = '';
+  document.getElementById('result').innerHTML = '<div class="empty">尚未开始，点击上方「一键全流程」或「仅改写」</div>';
+  resetLine();
+  setStatus('新任务已就绪，粘贴参考文案后开始');
+  document.getElementById('text').focus();
+}
 
 // ===== 生产线状态 =====
 function setStep(step, status) {
