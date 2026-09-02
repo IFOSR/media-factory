@@ -19,7 +19,7 @@ pub struct Prompts<'a> {
 pub async fn run(
     input: Option<String>,
     id: Option<String>,
-    reference: Option<String>,
+    reference: Vec<String>,
     rewrite_prompt: Option<String>,
     image_prompt: Option<String>,
     podcast_prompt: Option<String>,
@@ -41,7 +41,7 @@ pub async fn run(
         llm.as_ref(),
         &source,
         &id,
-        reference.map(PathBuf::from),
+        reference.into_iter().map(PathBuf::from).collect(),
         &prompts,
         &events,
         None,
@@ -57,7 +57,7 @@ pub async fn run_with_config(
     llm: &dyn LlmAgent,
     source: &str,
     id: &str,
-    reference: Option<PathBuf>,
+    reference: Vec<PathBuf>,
     prompts: &Prompts<'_>,
     events: &TaskEvents,
     podcast_speakers: Option<Vec<String>>,
@@ -239,7 +239,7 @@ done
         let root = dir.path().join("output");
         let events = crate::task::TaskEvents::local(&root, "e2e1");
 
-        run_with_config(&root, &cfg, &llm, "原始参考内容", "e2e1", None, &Prompts { rewrite: None, image: None, podcast: None }, &events, None)
+        run_with_config(&root, &cfg, &llm, "原始参考内容", "e2e1", vec![], &Prompts { rewrite: None, image: None, podcast: None }, &events, None)
             .await
             .unwrap();
 

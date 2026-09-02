@@ -35,7 +35,7 @@ pub async fn distill_prompt(
 /// 核心流程（可注入 llm 与 provider 以便测试）
 pub async fn run_with(
     dir: &Path,
-    reference: Option<PathBuf>,
+    reference: Vec<PathBuf>,
     llm: &dyn LlmAgent,
     provider: &dyn ImageProvider,
     user_prompt: Option<&str>,
@@ -53,15 +53,15 @@ pub async fn run_with(
     let img_prompt = distill_prompt(llm, &text, user_prompt).await?;
     println!("图像 prompt: {}", img_prompt);
 
-    if reference.is_some() && !provider.supports_reference() {
-        eprintln!("⚠️  当前生图 provider 不支持参考图，已忽略 --ref 降级为纯文本生图");
+    if !reference.is_empty() && !provider.supports_reference() {
+        eprintln!("⚠️  当前生图 provider 不支持参考图，已忽略参考图降级为纯文本生图");
     }
-    let reference = if provider.supports_reference() { reference } else { None };
+    let reference = if provider.supports_reference() { reference } else { vec![] };
 
     let bytes = provider
         .generate(&ImageRequest {
             prompt: img_prompt,
-            reference_image: reference,
+            reference_images: reference,
         })
         .await?;
 
@@ -76,7 +76,7 @@ pub async fn run_with(
 /// 公开入口
 pub async fn run(
     id: Option<String>,
-    reference: Option<String>,
+    reference: Vec<String>,
     user_prompt: Option<String>,
 ) -> anyhow::Result<String> {
     let dir = match &id {
@@ -87,7 +87,7 @@ pub async fn run(
         .file_name()
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_default();
-    let reference = reference.map(PathBuf::from);
+    let reference: Vec<PathBuf> = reference.into_iter().map(PathBuf::from).collect();
     let cfg = Config::load(&Config::path())?;
     let llm = crate::llm::resolve_llm(&cfg)?;
     let provider = provider::resolve_image(&cfg)?;

@@ -35,8 +35,8 @@ enum Commands {
     /// 步骤 2：基于改写文案生成配图
     Image {
         #[arg(long)] id: Option<String>,
-        /// 可选参考图
-        #[arg(long)] r#ref: Option<String>,
+        /// 可选参考图（可多次指定）
+        #[arg(long, action = clap::ArgAction::Append)] r#ref: Vec<String>,
         /// 用户自定义生图要求（叠加在系统提炼要求之上）
         #[arg(long)] prompt: Option<String>,
     },
@@ -56,7 +56,8 @@ enum Commands {
     Run {
         input: Option<String>,
         #[arg(long)] id: Option<String>,
-        #[arg(long)] r#ref: Option<String>,
+        /// 可选参考图（可多次指定）
+        #[arg(long, action = clap::ArgAction::Append)] r#ref: Vec<String>,
         /// 用户自定义改写要求
         #[arg(long)] prompt: Option<String>,
         /// 用户自定义生图要求

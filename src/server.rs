@@ -37,7 +37,7 @@ struct AppState {
 struct RunReq {
     text: String,
     #[serde(default)]
-    ref_image: Option<String>,
+    ref_images: Vec<String>,
     #[serde(default)]
     id: Option<String>,
     #[serde(default)]
@@ -69,7 +69,7 @@ struct ImageReq {
     #[serde(default)]
     id: Option<String>,
     #[serde(default)]
-    ref_image: Option<String>,
+    ref_images: Vec<String>,
     #[serde(default)]
     prompt: Option<String>,
 }
@@ -215,7 +215,7 @@ async fn run_pipeline(State(state): State<AppState>, Json(req): Json<RunReq>) ->
             llm.as_ref(),
             &req.text,
             &id,
-            req.ref_image.map(PathBuf::from),
+            req.ref_images.into_iter().map(PathBuf::from).collect(),
             &prompts,
             &events,
             speakers,
@@ -265,7 +265,7 @@ async fn image(State(state): State<AppState>, Json(req): Json<ImageReq>) -> Resp
     let lock = state.run_lock.clone();
     tokio::spawn(async move {
         let _guard = lock.lock().await;
-        let r = cmd::image::run_with(&dir, req.ref_image.map(PathBuf::from), llm.as_ref(), provider.as_ref(), req.prompt.as_deref(), &events).await;
+        let r = cmd::image::run_with(&dir, req.ref_images.into_iter().map(PathBuf::from).collect(), llm.as_ref(), provider.as_ref(), req.prompt.as_deref(), &events).await;
         match r {
             Ok(_) => events.task_done(),
             Err(e) => events.task_error(&e.to_string()),
@@ -426,7 +426,7 @@ struct SaveFileReq {
 
 async fn upload(mut multipart: axum::extract::Multipart) -> Response {
     let result = async {
-        let mut saved: Option<String> = None;
+        let mut saved: Option<(String, Option<String>)> = None;
         while let Some(field) = multipart.next_field().await? {
             if field.name() != Some("file") {
                 continue;
@@ -445,10 +445,24 @@ async fn upload(mut multipart: axum::extract::Multipart) -> Response {
             std::fs::create_dir_all(dir)?;
             let path = dir.join(format!("{ts}-{safe}.{ext}"));
             std::fs::write(&path, &data)?;
-            saved = Some(path.canonicalize()?.to_string_lossy().to_string());
+            let full = path.canonicalize()?.to_string_lossy().to_string();
+            // 文本类文件：顺带返回内容，供前端作为参考文案导入
+            let ext_l = ext.to_lowercase();
+            if matches!(ext_l.as_str(), "md" | "txt" | "markdown") {
+                let content = String::from_utf8_lossy(&data).to_string();
+                saved = Some((full, Some(content)));
+            } else {
+                saved = Some((full, None));
+            }
         }
         match saved {
-            Some(p) => Ok(Json(json!({"ok": true, "path": p}))),
+            Some((p, content)) => {
+                let mut obj = json!({"ok": true, "path": p});
+                if let Some(c) = content {
+                    obj["content"] = json!(c);
+                }
+                Ok(Json(obj))
+            }
             None => anyhow::bail!("未收到文件字段（字段名应为 file）"),
         }
     }

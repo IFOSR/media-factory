@@ -6,7 +6,7 @@ use crate::config::{BuiltinKind, Config, ProviderConfig};
 
 pub struct ImageRequest {
     pub prompt: String,
-    pub reference_image: Option<PathBuf>,
+    pub reference_images: Vec<PathBuf>,
 }
 
 #[async_trait::async_trait]
@@ -51,7 +51,7 @@ impl GeminiImage {
 impl ImageProvider for GeminiImage {
     async fn generate(&self, req: &ImageRequest) -> anyhow::Result<Vec<u8>> {
         let mut parts: Vec<serde_json::Value> = vec![serde_json::json!({"text": req.prompt})];
-        if let Some(ref_path) = &req.reference_image {
+        for ref_path in &req.reference_images {
             let bytes = std::fs::read(ref_path)?;
             let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
             parts.push(serde_json::json!({
@@ -152,7 +152,8 @@ impl ImageProvider for OpenAiImages {
         }
 
         if self.supports_reference {
-            if let Some(ref_path) = &req.reference_image {
+            // OpenAI 兼容接口一般只支持单张参考图；多张时取第一张
+            if let Some(ref_path) = req.reference_images.first() {
                 let bytes = std::fs::read(ref_path)?;
                 let data_url = format!(
                     "data:image/png;base64,{}",
@@ -160,7 +161,7 @@ impl ImageProvider for OpenAiImages {
                 );
                 body.insert("image".into(), data_url.into());
             }
-        } else if req.reference_image.is_some() {
+        } else if !req.reference_images.is_empty() {
             anyhow::bail!("当前生图 provider 不支持参考图");
         }
 
@@ -289,7 +290,7 @@ mod tests {
         let bytes = p
             .generate(&ImageRequest {
                 prompt: "一只猫".into(),
-                reference_image: Some(write_temp_png(dir.path())),
+                reference_images: vec![write_temp_png(dir.path())],
             })
             .await
             .unwrap();
@@ -315,7 +316,7 @@ mod tests {
         let bytes = p
             .generate(&ImageRequest {
                 prompt: "一只猫".into(),
-                reference_image: None,
+                reference_images: vec![],
             })
             .await
             .unwrap();
@@ -349,7 +350,7 @@ mod tests {
         let bytes = p
             .generate(&ImageRequest {
                 prompt: "一只猫".into(),
-                reference_image: None,
+                reference_images: vec![],
             })
             .await
             .unwrap();

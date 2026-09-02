@@ -85,6 +85,12 @@
   button:active { transform:translateY(1px); }
   button:disabled { opacity:.45; cursor:not-allowed; }
   button.ghost { background:transparent; border:1px solid var(--line); color:var(--text); font-weight:500; }
+  button.ghost.small { font-size:12px; padding:2px 8px; border-radius:6px; vertical-align:middle; }
+  #refList { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+  .refitem { display:inline-flex; align-items:center; gap:6px; background:var(--bg2); border:1px solid var(--line);
+    border-radius:6px; padding:3px 8px; font-size:12px; color:var(--text); }
+  .refitem button.x { background:transparent; border:none; color:var(--muted); cursor:pointer; font-size:14px; padding:0 2px; }
+  .refitem button.x:hover { color:var(--err, #e11); }
 
   #status { margin-top:12px; font-size:13px; color:var(--muted); white-space:pre-wrap; min-height:20px; }
   #status.err { color:var(--err); }
@@ -170,8 +176,8 @@
     <div class="panel">
       <h2>投料</h2>
       <div class="field">
-        <label>参考文案（必填）</label>
-        <textarea id="text" placeholder="粘贴要改写的参考文案…"></textarea>
+        <label>参考文案（必填） <button class="ghost small" id="docBtn">📎 上传文档</button><input type="file" id="docFile" accept=".md,.txt,.markdown,text/plain" hidden></label>
+        <textarea id="text" placeholder="粘贴参考文案，或点击上方「上传文档」导入 .md / .txt 文件"></textarea>
       </div>
       <div class="field">
         <label>改写要求（可选，叠加在系统爆款要求之上）</label>
@@ -198,9 +204,10 @@
         <div class="hint">留空音色则用配置默认；仅火山播客 provider 生效。</div>
       </div>
       <div class="field">
-        <label>参考图（可选）</label>
-        <div class="drop" id="drop">点击或拖拽图片上传</div>
-        <input type="file" id="file" accept="image/*" hidden>
+        <label>参考图（可选，可追加多张）</label>
+        <div class="drop" id="drop">点击或拖拽图片上传（可多选/多次追加）</div>
+        <input type="file" id="file" accept="image/*" hidden multiple>
+        <div id="refList"></div>
       </div>
       <div class="field">
         <label>任务 ID（可选，留空自动生成）</label>
@@ -272,7 +279,7 @@
   </div>
 
 <script>
-const state = { refPath:null, fileName:null, currentId:null, es:null };
+const state = { refPath:null, refImages:[], fileName:null, currentId:null, es:null };
 const ARTIFACT_META = {
   'rewritten.md': { step:'rewrite', cap:'改写文案', kind:'text' },
   'script.md':    { step:'podcast', cap:'播客脚本', kind:'text' },
@@ -314,22 +321,54 @@ function voiceOptions() {
   });
 })();
 
-// ===== 上传参考图 =====
+// ===== 参考图（多附件）与参考文档附件 =====
 const drop = document.getElementById('drop'), fileInput = document.getElementById('file');
 drop.addEventListener('click', () => fileInput.click());
 ['dragover','dragenter'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('on'); }));
 ['dragleave','drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('on'); }));
-drop.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) upload(f); });
-fileInput.addEventListener('change', () => { const f = fileInput.files[0]; if (f) upload(f); });
-async function upload(file) {
-  setStatus('上传中…');
+drop.addEventListener('drop', e => { const fs = e.dataTransfer.files; for (const f of fs) uploadImage(f); });
+fileInput.addEventListener('change', () => { for (const f of fileInput.files) uploadImage(f); fileInput.value=''; });
+
+async function uploadImage(file) {
   const fd = new FormData(); fd.append('file', file);
   try {
     const res = await fetch('/api/upload', { method:'POST', body:fd });
     const d = await res.json();
-    if (d.ok) { state.refPath = d.path; drop.textContent = '✓ ' + file.name; drop.classList.add('has'); setStatus('参考图已上传'); }
-    else setStatus('上传失败：' + d.error, true);
-  } catch(e){ setStatus('上传失败：' + e.message, true); }
+    if (d.ok) { state.refImages.push(d.path); renderRefImages(); }
+    else setStatus('图片上传失败：' + d.error, true);
+  } catch(e){ setStatus('图片上传失败：' + e.message, true); }
+}
+
+function renderRefImages() {
+  const el = document.getElementById('refList');
+  el.innerHTML = '';
+  if (!state.refImages.length) { el.innerHTML = ''; return; }
+  for (let i = 0; i < state.refImages.length; i++) {
+    const p = state.refImages[i];
+    const name = p.split('/').pop();
+    const d = document.createElement('span');
+    d.className = 'refitem';
+    d.innerHTML = `🖼 ${name} <button class="x" onclick="removeRef(${i})">×</button>`;
+    el.appendChild(d);
+  }
+}
+function removeRef(i) { state.refImages.splice(i, 1); renderRefImages(); }
+
+// 参考文档：上传 md/txt，读取内容填入文案输入框
+const docBtn = document.getElementById('docBtn'), docFile = document.getElementById('docFile');
+docBtn.addEventListener('click', () => docFile.click());
+docFile.addEventListener('change', () => { const f = docFile.files[0]; if (f) uploadDoc(f); docFile.value=''; });
+async function uploadDoc(file) {
+  const fd = new FormData(); fd.append('file', file);
+  try {
+    const res = await fetch('/api/upload', { method:'POST', body:fd });
+    const d = await res.json();
+    if (d.ok && d.content !== undefined) {
+      const ta = document.getElementById('text');
+      ta.value = ta.value ? (ta.value + '\n\n' + d.content) : d.content;
+      setStatus('✓ 已导入文档内容：' + file.name);
+    } else { setStatus('文档导入失败：' + (d.error || '未知'), true); }
+  } catch(e){ setStatus('文档导入失败：' + e.message, true); }
 }
 
 function setStatus(msg, isErr) { const el = document.getElementById('status'); el.className = isErr ? 'err' : ''; el.innerHTML = msg; }
@@ -347,6 +386,8 @@ function newTask() {
   document.getElementById('speaker1').value = '';
   document.getElementById('speaker2').value = '';
   document.getElementById('speaker2').style.display = 'block';
+  state.refImages = [];
+  renderRefImages();
   document.getElementById('result').innerHTML = '<div class="empty">尚未开始，点击上方「一键全流程」或「仅改写」</div>';
   resetLine();
   setStatus('新任务已就绪，粘贴参考文案后开始');
@@ -389,7 +430,7 @@ async function run(step) {
   }
   if (id) body.id = id;
   else if (state.currentId && step !== 'rewrite' && step !== 'run') body.id = state.currentId;
-  if ((step === 'run' || step === 'image') && state.refPath) body.ref_image = state.refPath;
+  if ((step === 'run' || step === 'image') && state.refImages.length) body.ref_images = state.refImages;
 
   setStatus('<span class="spin"></span>启动任务…');
 
