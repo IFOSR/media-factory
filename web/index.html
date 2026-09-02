@@ -70,10 +70,6 @@
   textarea { min-height:120px; resize:vertical; }
   textarea.small { min-height:54px; }
 
-  .drop { border:1.5px dashed var(--line); border-radius:8px; padding:12px; text-align:center;
-    font-size:13px; color:var(--muted); cursor:pointer; transition:all .2s; }
-  .drop:hover, .drop.on { border-color:var(--amber); color:var(--text); background:var(--amber-soft); }
-  .drop.has { color:var(--ok); border-color:var(--ok); }
   .podset { display:flex; flex-direction:column; gap:6px; }
   .podset select { width:100%; background:var(--bg2); border:1px solid var(--line); border-radius:8px;
     color:var(--text); padding:8px 10px; font-size:13px; }
@@ -184,13 +180,8 @@
         <textarea id="prompt" class="small" placeholder="如：面向小红书，语气活泼，500 字左右"></textarea>
       </div>
       <div class="field">
-        <label>生图要求（可选）</label>
+        <label>生图要求（可选） <button class="ghost small" id="imgBtn">📎 上传参考图</button><input type="file" id="file" accept="image/*" hidden multiple></label>
         <textarea id="imagePrompt" class="small" placeholder="如：扁平插画风，暖色调"></textarea>
-      </div>
-      <div class="field">
-        <label>参考图（可选，可追加多张）</label>
-        <div class="drop" id="drop">点击或拖拽图片上传（可多选/多次追加）</div>
-        <input type="file" id="file" accept="image/*" hidden multiple>
         <div id="refList"></div>
       </div>
       <div class="field">
@@ -321,12 +312,9 @@ function voiceOptions() {
   });
 })();
 
-// ===== 参考图（多附件）与参考文档附件 =====
-const drop = document.getElementById('drop'), fileInput = document.getElementById('file');
-drop.addEventListener('click', () => fileInput.click());
-['dragover','dragenter'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('on'); }));
-['dragleave','drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('on'); }));
-drop.addEventListener('drop', e => { const fs = e.dataTransfer.files; for (const f of fs) uploadImage(f); });
+// ===== 参考图（多附件，点击上传）与参考文档附件 =====
+const imgBtn = document.getElementById('imgBtn'), fileInput = document.getElementById('file');
+imgBtn.addEventListener('click', () => fileInput.click());
 fileInput.addEventListener('change', () => { for (const f of fileInput.files) uploadImage(f); fileInput.value=''; });
 
 async function uploadImage(file) {
