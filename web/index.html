@@ -5,238 +5,277 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Media Factory · 内容工厂</title>
 <style>
-  :root {
-    --bg:#14161d; --bg2:#1b1e27; --panel:#1e212b; --line:#2c303c;
-    --text:#e8e6e1; --muted:#8a8f9e;
-    --amber:#e8a33d; --amber-soft:rgba(232,163,61,.14);
-    --cyan:#4aa8c0; --ok:#67b87d; --err:#e0655a;
-    --running:#5aa7ff; --running-soft:rgba(90,167,255,.15);
+  /* ===== 设计 token ===== */
+  :root{
+    --bg:#0c0d11; --panel:#14161c; --panel2:#1a1d25; --panel3:#20242f;
+    --line:rgba(255,255,255,.07); --line2:rgba(255,255,255,.14);
+    --text:#e8eaee; --muted:#8b90a0; --faint:#5b6070;
+    --accent:#6e7bff; --accent-soft:rgba(110,123,255,.14); --accent-line:rgba(110,123,255,.4);
+    --ok:#4ade80; --ok-soft:rgba(74,222,128,.12);
+    --warn:#fbbf24; --err:#f87171; --err-soft:rgba(248,113,113,.12);
     --mono:"SF Mono","JetBrains Mono","Menlo",monospace;
-    --sans:-apple-system,"PingFang SC","Hiragino Sans GB","Noto Sans SC",sans-serif;
+    --sans:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Noto Sans SC",sans-serif;
+    --shadow:0 8px 30px rgba(0,0,0,.35);
   }
-  [data-theme="light"] {
-    --bg:#f5f4f0; --bg2:#ffffff; --panel:#ffffff; --line:#e2e0da;
-    --text:#23262d; --muted:#6b7280;
-    --amber:#b8771d; --amber-soft:rgba(184,119,29,.12);
-    --cyan:#22748a; --ok:#3d9a58; --err:#c94a3d;
-    --running:#2f6fd6; --running-soft:rgba(47,111,214,.12);
+  [data-theme="light"]{
+    --bg:#f5f6f8; --panel:#ffffff; --panel2:#f4f5f8; --panel3:#eceef2;
+    --line:rgba(0,0,0,.08); --line2:rgba(0,0,0,.16);
+    --text:#1b1e26; --muted:#6b7280; --faint:#9aa0ad;
+    --accent:#4f46e5; --accent-soft:rgba(79,70,229,.08); --accent-line:rgba(79,70,229,.35);
+    --ok:#16a34a; --ok-soft:rgba(22,163,74,.1);
+    --warn:#d97706; --err:#dc2626; --err-soft:rgba(220,38,38,.08);
+    --shadow:0 8px 30px rgba(0,0,0,.08);
   }
-  * { box-sizing:border-box; margin:0; padding:0; }
-  html { scroll-behavior:smooth; }
-  body {
-    background:var(--bg); color:var(--text); font-family:var(--sans);
-    line-height:1.6; padding:26px 30px 60px; min-height:100vh;
-    transition:background .3s,color .3s;
-  }
-  .topbar { display:flex; align-items:center; gap:12px; margin-bottom:20px; }
-  .topbar .brand { color:var(--amber); font-family:var(--mono); font-size:22px; }
-  .topbar h1 { font-size:20px; font-weight:650; letter-spacing:.5px; }
-  .topbar .sub { color:var(--muted); font-size:13px; }
-  .topbar .spacer { flex:1; }
-  .iconbtn { background:transparent; border:1px solid var(--line); color:var(--text);
-    border-radius:8px; padding:6px 12px; font-size:13px; cursor:pointer; }
-  .iconbtn:hover { border-color:var(--amber); color:var(--amber); }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.6;
+    display:flex;height:100vh;overflow:hidden;transition:background .25s,color .25s}
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-thumb{background:var(--line2);border-radius:6px;border:2px solid var(--bg)}
+  ::-webkit-scrollbar-track{background:transparent}
+  button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
+  textarea,input,select{font-family:inherit;color:var(--text)}
+  a{color:var(--accent);text-decoration:none}
 
-  /* 生产线 */
-  .line { display:flex; gap:10px; margin-bottom:22px; }
-  .station { flex:1; background:var(--panel); border:1px solid var(--line); border-radius:10px;
-    padding:12px 14px; position:relative; transition:border-color .2s,transform .15s; }
-  .station:hover { border-color:var(--amber); transform:translateY(-1px); }
-  .station.done { border-color:var(--amber); }
-  .station.running { border-color:var(--running); }
-  .station.failed { border-color:var(--err); }
-  .station .num { font-family:var(--mono); font-size:11px; color:var(--amber); letter-spacing:1px; }
-  .station .name { font-size:14px; margin-top:2px; font-weight:600; }
-  .station .desc { font-size:11px; color:var(--muted); margin-top:1px; }
-  .station .dot { position:absolute; top:13px; right:14px; width:7px; height:7px; border-radius:50%;
-    background:var(--line); transition:background .3s; }
-  .station.done .dot { background:var(--amber); box-shadow:0 0 8px var(--amber); }
-  .station.running .dot { background:var(--running); animation:breathe 1.2s ease-in-out infinite; }
-  .station.failed .dot { background:var(--err); }
-  @keyframes breathe { 0%,100%{opacity:.4;transform:scale(.85)} 50%{opacity:1;transform:scale(1.15)} }
+  /* ===== 侧边栏 ===== */
+  #sidebar{width:264px;flex-shrink:0;background:var(--panel);border-right:1px solid var(--line);
+    display:flex;flex-direction:column}
+  .side-top{padding:18px 16px 14px;border-bottom:1px solid var(--line)}
+  .brand{display:flex;align-items:center;gap:9px;margin-bottom:14px}
+  .brand .logo{width:26px;height:26px;border-radius:7px;background:linear-gradient(135deg,var(--accent),#9a6bff);
+    display:flex;align-items:center;justify-content:center;font-size:14px;box-shadow:0 2px 10px var(--accent-soft)}
+  .brand .name{font-weight:650;font-size:15px;letter-spacing:.2px}
+  .brand .name small{display:block;font-weight:400;font-size:10px;color:var(--muted);letter-spacing:.4px}
+  #btnNew{width:100%;background:var(--accent);color:#fff;border-radius:9px;padding:10px 12px;
+    font-size:13.5px;font-weight:600;transition:filter .15s,transform .1s;box-shadow:0 2px 12px var(--accent-soft)}
+  #btnNew:hover{filter:brightness(1.1)}
+  #btnNew:active{transform:translateY(1px)}
+  .side-label{font-size:11px;color:var(--faint);letter-spacing:1px;padding:14px 18px 6px;text-transform:uppercase}
+  #taskList{flex:1;overflow-y:auto;padding:0 10px 16px}
+  .task-item{display:flex;align-items:center;gap:9px;padding:9px 10px;border-radius:8px;cursor:pointer;
+    border:1px solid transparent;margin-bottom:3px;transition:background .12s,border-color .12s}
+  .task-item:hover{background:var(--panel2)}
+  .task-item.active{background:var(--accent-soft);border-color:var(--accent-line)}
+  .task-item .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;background:var(--faint)}
+  .task-item .dot.done{background:var(--ok)}
+  .task-item .dot.running{background:var(--accent);animation:pulse 1.2s infinite}
+  .task-item .dot.failed{background:var(--err)}
+  .task-item .tid{font-family:var(--mono);font-size:12.5px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .task-item .sub{font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .task-item .meta{flex:1;min-width:0}
+  @keyframes pulse{0%,100%{opacity:.4;transform:scale(.85)}50%{opacity:1;transform:scale(1.1)}}
+  .side-empty{color:var(--faint);font-size:12px;text-align:center;padding:30px 10px}
 
-  .grid { display:grid; grid-template-columns:400px 1fr; gap:22px; align-items:start; }
-  @media (max-width:980px){ .grid { grid-template-columns:1fr; } }
+  /* ===== 主区 ===== */
+  #main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+  #topbar{display:flex;align-items:center;gap:12px;padding:14px 26px;border-bottom:1px solid var(--line);
+    background:var(--panel);flex-shrink:0}
+  #curTask{font-family:var(--mono);font-size:13px;font-weight:600}
+  #curTask .tstatus{font-family:var(--sans);font-weight:400;font-size:12px;color:var(--muted);margin-left:10px}
+  .spacer{flex:1}
+  #status{font-size:12.5px;color:var(--muted);max-width:40%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #status.err{color:var(--err)}
+  .iconbtn{border:1px solid var(--line);border-radius:8px;padding:6px 12px;font-size:12.5px;color:var(--text);
+    transition:border-color .15s,color .15s;background:var(--panel2)}
+  .iconbtn:hover{border-color:var(--accent-line);color:var(--accent)}
+  .spin{display:inline-block;width:11px;height:11px;border:2px solid var(--line2);border-top-color:var(--accent);
+    border-radius:50%;animation:rot .8s linear infinite;vertical-align:-1px;margin-right:6px}
+  @keyframes rot{to{transform:rotate(360deg)}}
 
-  .panel { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:20px; }
-  .panel h2 { font-size:14px; margin-bottom:14px; font-weight:600; letter-spacing:.3px; }
-  .panel h2::before { content:"// "; color:var(--amber); font-family:var(--mono); }
+  #scroll{flex:1;overflow-y:auto;padding:26px 30px 80px}
+  #tlWrap{max-width:820px;margin:0 auto}
 
-  .field { margin-bottom:13px; }
-  .field label { display:block; font-size:12px; color:var(--muted); margin-bottom:5px; }
-  textarea, input[type=text] { width:100%; background:var(--bg2); border:1px solid var(--line);
-    border-radius:8px; color:var(--text); padding:10px 12px; font-size:14px; font-family:inherit; transition:border-color .2s; }
-  textarea:focus, input:focus { outline:none; border-color:var(--amber); }
-  textarea { min-height:120px; resize:vertical; }
-  textarea.small { min-height:54px; }
+  /* ===== 时间线步骤卡片 ===== */
+  .step-card{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    margin-bottom:0;padding:0 0 0 0;transition:border-color .2s;overflow:hidden}
+  .step-card + .step-card{margin-top:0}
+  /* 时间线竖线：卡片之间 */
+  #timeline{position:relative;padding-left:6px}
+  .step-row{position:relative;padding-left:34px;padding-bottom:22px}
+  .step-row::before{content:"";position:absolute;left:14px;top:8px;bottom:-2px;width:2px;background:var(--line)}
+  .step-row:last-child::before{bottom:100%}
+  .step-row:last-child{padding-bottom:0}
+  .tl-dot{position:absolute;left:8px;top:20px;width:14px;height:14px;border-radius:50%;
+    background:var(--panel);border:2px solid var(--line2);z-index:2;transition:all .25s}
+  .step-row[data-state="thinking"] .tl-dot{border-color:var(--accent);background:var(--accent);box-shadow:0 0 10px var(--accent);animation:pulse 1.2s infinite}
+  .step-row[data-state="done"] .tl-dot{border-color:var(--ok);background:var(--ok)}
+  .step-row[data-state="failed"] .tl-dot{border-color:var(--err);background:var(--err)}
 
-  .podset { display:flex; flex-direction:column; gap:6px; }
-  .podset select { width:100%; background:var(--bg2); border:1px solid var(--line); border-radius:8px;
-    color:var(--text); padding:8px 10px; font-size:13px; }
+  .card-head{display:flex;align-items:center;gap:12px;padding:15px 18px;cursor:pointer;user-select:none}
+  .card-head:hover{background:var(--panel2)}
+  .step-num{font-family:var(--mono);font-size:11px;color:var(--accent);letter-spacing:1px;font-weight:600}
+  .card-title{font-size:15px;font-weight:650}
+  .card-sub{font-size:12px;color:var(--muted);margin-left:8px;font-weight:400}
+  .card-status{margin-left:auto;font-size:12px;display:flex;align-items:center;gap:6px;color:var(--muted)}
+  .card-status .badge{padding:2px 9px;border-radius:20px;font-size:11px;font-weight:600}
+  .badge.idle{background:var(--panel3);color:var(--muted)}
+  .badge.thinking{background:var(--accent-soft);color:var(--accent)}
+  .badge.done{background:var(--ok-soft);color:var(--ok)}
+  .badge.failed{background:var(--err-soft);color:var(--err)}
+  .chev{color:var(--faint);font-size:12px;transition:transform .2s}
+  .step-row.collapsed .chev{transform:rotate(-90deg)}
+  .card-body{border-top:1px solid var(--line)}
+  .step-row.collapsed .card-body{display:none}
 
-  .btns { display:flex; flex-wrap:wrap; gap:8px; margin-top:4px; }
-  button { background:var(--amber); color:#1a1408; border:none; border-radius:8px;
-    padding:10px 16px; font-size:14px; font-weight:600; cursor:pointer; transition:filter .15s,transform .1s; }
-  button:hover { filter:brightness(1.08); }
-  button:active { transform:translateY(1px); }
-  button:disabled { opacity:.45; cursor:not-allowed; }
-  button.ghost { background:transparent; border:1px solid var(--line); color:var(--text); font-weight:500; }
-  button.ghost.small { font-size:12px; padding:2px 8px; border-radius:6px; vertical-align:middle; }
-  #refList { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
-  .refitem { display:inline-flex; align-items:center; gap:6px; background:var(--bg2); border:1px solid var(--line);
-    border-radius:6px; padding:3px 8px; font-size:12px; color:var(--text); }
-  .refitem button.x { background:transparent; border:none; color:var(--muted); cursor:pointer; font-size:14px; padding:0 2px; }
-  .refitem button.x:hover { color:var(--err, #e11); }
-  label.check { display:flex; align-items:center; gap:6px; font-size:13px; color:var(--muted); margin-top:6px; cursor:pointer; }
-  label.check input { accent-color:var(--amber); width:15px; height:15px; }
-  .rowline { display:flex; align-items:center; gap:16px; flex-wrap:wrap; margin-top:6px; }
-  .rowline select { background:var(--bg2); border:1px solid var(--line); border-radius:6px; color:var(--text);
-    padding:4px 8px; font-size:13px; }
+  /* 投料态 */
+  .pane-input{padding:18px}
+  .f{margin-bottom:14px}
+  .f:last-child{margin-bottom:0}
+  .f label{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted);margin-bottom:6px;font-weight:500}
+  textarea,input[type=text]{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:9px;
+    padding:10px 12px;font-size:13.5px;transition:border-color .15s,box-shadow .15s}
+  textarea:focus,input:focus,select:focus{outline:none;border-color:var(--accent-line);box-shadow:0 0 0 3px var(--accent-soft)}
+  textarea{min-height:96px;resize:vertical}
+  textarea.sm{min-height:52px}
+  .mini{border:1px solid var(--line);border-radius:6px;padding:2px 9px;font-size:11.5px;color:var(--muted);transition:all .15s}
+  .mini:hover{border-color:var(--accent-line);color:var(--accent)}
+  .frow{display:flex;align-items:center;gap:18px;flex-wrap:wrap;margin-top:10px}
+  .chk{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--muted)}
+  .chk select{background:var(--panel2);border:1px solid var(--line);border-radius:7px;padding:5px 9px;font-size:12.5px;color:var(--text)}
+  .chk input[type=checkbox]{accent-color:var(--accent);width:15px;height:15px}
+  .hint{font-size:11.5px;color:var(--faint);margin-top:6px}
+  #refList{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  .refitem{display:inline-flex;align-items:center;gap:6px;background:var(--panel3);border:1px solid var(--line);
+    border-radius:7px;padding:3px 9px;font-size:12px}
+  .refitem .x{color:var(--faint);font-size:14px;padding:0 2px}
+  .refitem .x:hover{color:var(--err)}
 
-  #status { margin-top:12px; font-size:13px; color:var(--muted); white-space:pre-wrap; min-height:20px; }
-  #status.err { color:var(--err); }
-  .spin { display:inline-block; width:12px; height:12px; border:2px solid var(--line);
-    border-top-color:var(--amber); border-radius:50%; animation:r .8s linear infinite; vertical-align:-1px; margin-right:6px; }
-  @keyframes r { to { transform:rotate(360deg); } }
+  /* 思考态：日志区 */
+  .pane-run{display:none}
+  .step-row[data-state]:not([data-state="input"]) .pane-run{display:block}
+  .step-row[data-state]:not([data-state="input"]) .pane-input{display:none}
+  .step-row[data-state="input"] .pane-run{display:none}
 
-  /* 产物面板 */
-  .artifact { border-top:1px solid var(--line); padding:14px 0; animation:slideIn .3s ease; }
-  .artifact:first-child { border-top:none; padding-top:0; }
-  @keyframes slideIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
-  .artifact .cap { font-family:var(--mono); font-size:11px; color:var(--cyan); letter-spacing:.5px; margin-bottom:8px; }
-  .artifact textarea, .artifact .txt { width:100%; background:var(--bg2); border:1px solid var(--line);
-    border-radius:8px; color:var(--text); padding:12px; font-size:13px; white-space:pre-wrap; max-height:360px; overflow:auto; }
-  .artifact textarea { font-family:inherit; resize:vertical; min-height:120px; }
-  .artifact .placeholder { color:var(--muted); font-size:13px; padding:10px 0; }
-  video, audio { width:100%; border-radius:8px; outline:none; }
-  img.prev { max-width:100%; border-radius:8px; display:block; }
+  .log-area{padding:14px 18px;max-height:300px;overflow-y:auto;background:var(--panel2);
+    border-bottom:1px solid var(--line)}
+  .log-area:empty{display:none}
+  .log-line{display:flex;gap:10px;font-family:var(--mono);font-size:12.5px;color:var(--muted);
+    padding:3px 0;animation:fadeUp .3s ease;align-items:baseline}
+  .log-line .lt{color:var(--faint);font-size:11px;flex-shrink:0}
+  .log-line:last-child{color:var(--text)}
+  .log-line .tick{color:var(--accent);flex-shrink:0}
+  @keyframes fadeUp{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+  .run-idle{padding:16px 18px;color:var(--faint);font-size:12.5px}
+  .run-idle a{color:var(--accent);cursor:pointer}
+  .step-row:not([data-state="idle"]) .run-idle{display:none}
+  .step-actions{margin-top:14px;display:flex;justify-content:flex-end}
 
-  /* 任务列表 */
-  .task { border:1px solid var(--line); border-radius:10px; margin-bottom:10px; overflow:hidden; }
-  .task-head { display:flex; align-items:center; gap:10px; padding:12px 14px; cursor:pointer; transition:background .15s; }
-  .task-head:hover { background:var(--bg2); }
-  .task-head .st { width:9px; height:9px; border-radius:50%; flex-shrink:0; }
-  .st.done { background:var(--ok); } .st.running { background:var(--running); animation:breathe 1.2s infinite; }
-  .st.failed { background:var(--err); } .st.pending { background:var(--muted); } .st.unknown { background:var(--line); }
-  .task-head .tid { font-family:var(--mono); font-size:13px; flex-shrink:0; }
-  .task-head .step { font-size:12px; color:var(--muted); flex:1; }
-  .task-head .chev { color:var(--muted); font-size:12px; transition:transform .2s; }
-  .task.open .chev { transform:rotate(90deg); }
-  .task-body { display:none; padding:4px 14px 14px; border-top:1px solid var(--line); background:var(--bg2); }
-  .task.open .task-body { display:block; }
-  .empty { color:var(--muted); font-size:13px; text-align:center; padding:24px 0; }
+  /* 产物区 */
+  .artifact-area{padding:16px 18px}
+  .artifact-area:empty{display:none}
+  .artifact{margin-bottom:14px;animation:fadeUp .3s ease}
+  .artifact:last-child{margin-bottom:0}
+  .artifact .cap{font-family:var(--mono);font-size:11px;color:var(--accent);letter-spacing:.5px;
+    margin-bottom:8px;display:flex;align-items:center;gap:8px}
+  .artifact .cap .fname{color:var(--faint)}
+  .artifact textarea,.artifact .txt{width:100%;background:var(--panel2);border:1px solid var(--line);
+    border-radius:9px;padding:12px;font-size:13px;white-space:pre-wrap;max-height:340px;overflow:auto}
+  .artifact textarea{font-family:inherit;resize:vertical;min-height:110px}
+  .artifact .savebar{display:flex;align-items:center;gap:10px;margin-top:8px}
+  .savebtn{border:1px solid var(--accent-line);color:var(--accent);border-radius:7px;padding:5px 13px;
+    font-size:12.5px;font-weight:600;background:var(--accent-soft);transition:filter .15s}
+  .savebtn:hover{filter:brightness(1.15)}
+  .saved-tip{font-size:12px;color:var(--ok)}
+  img.prev{max-width:100%;border-radius:10px;display:block;cursor:zoom-in;border:1px solid var(--line);transition:opacity .15s}
+  img.prev:hover{opacity:.92}
+  video,audio{width:100%;border-radius:10px;outline:none;border:1px solid var(--line)}
+  .placeholder{color:var(--faint);font-size:12.5px;padding:8px 0}
+
+  /* 操作条 */
+  #actionBar{max-width:820px;margin:26px auto 0;display:flex;align-items:center;gap:9px;flex-wrap:wrap;
+    background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
+  #actionBar input{flex:1;min-width:180px}
+  .btn-primary{background:var(--accent);color:#fff;border-radius:9px;padding:10px 18px;font-size:13.5px;
+    font-weight:600;transition:filter .15s,transform .1s;box-shadow:0 2px 12px var(--accent-soft)}
+  .btn-primary:hover{filter:brightness(1.1)}
+  .btn-primary:active{transform:translateY(1px)}
+  .btn-primary:disabled{opacity:.45;cursor:not-allowed}
+  .btn-ghost{border:1px solid var(--line);border-radius:9px;padding:9px 15px;font-size:13px;color:var(--text);
+    background:var(--panel2);transition:border-color .15s,color .15s}
+  .btn-ghost:hover{border-color:var(--accent-line);color:var(--accent)}
+
+  .empty-state{max-width:820px;margin:60px auto;text-align:center;color:var(--faint)}
+  .empty-state .big{font-size:40px;margin-bottom:14px;opacity:.5}
+  .empty-state .t{font-size:15px;color:var(--muted);margin-bottom:6px}
+  .empty-state .s{font-size:13px}
+
+  /* 灯箱 */
+  #lightbox{position:fixed;inset:0;background:rgba(0,0,0,.85);backdrop-filter:blur(8px);z-index:80;
+    display:none;align-items:center;justify-content:center;cursor:zoom-out;padding:30px}
+  #lightbox.show{display:flex}
+  #lightbox img{max-width:92%;max-height:92%;border-radius:12px;box-shadow:var(--shadow)}
 
   /* 弹窗 */
-  .overlay { position:fixed; inset:0; background:rgba(0,0,0,.55); backdrop-filter:blur(3px);
-    display:none; align-items:center; justify-content:center; z-index:50; padding:20px; }
-  .overlay.show { display:flex; }
-  .cfg-modal { background:var(--panel); border:1px solid var(--line); border-radius:14px;
-    width:560px; max-width:100%; max-height:90vh; display:flex; flex-direction:column; overflow:hidden; }
-  .cfg-head { display:flex; justify-content:space-between; align-items:center; padding:16px 20px;
-    border-bottom:1px solid var(--line); font-size:15px; font-weight:600; }
-  .cfg-head .x { background:none; border:none; color:var(--muted); font-size:20px; cursor:pointer; }
-  .cfg-body { padding:18px 20px; overflow-y:auto; }
-  .cfg-body section { margin-bottom:20px; }
-  .cfg-body section h3 { font-size:13px; margin-bottom:10px; }
-  .cfg-body section h3::before { content:"// "; color:var(--amber); font-family:var(--mono); }
-  .cfg-body select { width:100%; background:var(--bg2); border:1px solid var(--line);
-    border-radius:8px; color:var(--text); padding:9px 10px; font-size:13px; margin-bottom:8px; }
-  .cfg-body .row { display:flex; gap:8px; margin-bottom:8px; }
-  .cfg-body .row input { flex:1; }
-  .cfg-foot { padding:14px 20px; border-top:1px solid var(--line); display:flex; justify-content:flex-end; gap:8px; }
-  .custom-item { display:flex; align-items:center; justify-content:space-between; gap:8px;
-    background:var(--bg2); border:1px solid var(--line); border-radius:8px; padding:8px 12px; margin-bottom:6px; font-size:13px; }
-  .custom-item .del { background:none; border:none; color:var(--err); cursor:pointer; font-size:13px; }
-  .hint { font-size:11px; color:var(--muted); margin-top:4px; }
-  .cfg-current { display:flex; align-items:center; background:var(--bg2); border:1px solid var(--line);
-    border-radius:8px; padding:9px 12px; margin-bottom:8px; font-size:13px; }
-  .cfg-current::before { content:"● "; color:var(--cyan); font-size:11px; }
-  .custom-form { margin-top:10px; background:var(--bg2); border:1px solid var(--line); border-radius:8px; padding:12px; }
-  .custom-form .row { margin-bottom:8px; }
+  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);backdrop-filter:blur(6px);
+    display:none;align-items:center;justify-content:center;z-index:60;padding:20px}
+  .overlay.show{display:flex}
+  .cfg-modal{background:var(--panel);border:1px solid var(--line2);border-radius:16px;box-shadow:var(--shadow);
+    width:560px;max-width:100%;max-height:90vh;display:flex;flex-direction:column;overflow:hidden}
+  .cfg-head{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;
+    border-bottom:1px solid var(--line);font-size:15px;font-weight:650}
+  .cfg-head .x{color:var(--muted);font-size:22px;line-height:1;padding:0 4px}
+  .cfg-head .x:hover{color:var(--text)}
+  .cfg-body{padding:18px 20px;overflow-y:auto}
+  .cfg-body section{margin-bottom:22px}
+  .cfg-body section h3{font-size:12.5px;margin-bottom:10px;color:var(--muted);letter-spacing:.4px;text-transform:uppercase}
+  .cfg-body select{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:9px;
+    padding:9px 11px;font-size:13px;margin-bottom:8px}
+  .cfg-body .row{display:flex;gap:8px;margin-bottom:8px}
+  .cfg-body .row input{flex:1}
+  .cfg-body input[type=text]{background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:9px 11px;font-size:13px}
+  .cfg-foot{padding:14px 20px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:9px}
+  .cfg-current{display:flex;align-items:center;background:var(--panel2);border:1px solid var(--line);
+    border-radius:9px;padding:10px 13px;margin-bottom:9px;font-size:13px}
+  .cfg-current::before{content:"●";color:var(--accent);font-size:10px;margin-right:9px}
+  .custom-item{display:flex;align-items:center;justify-content:space-between;gap:8px;
+    background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:9px 13px;margin-bottom:7px;font-size:13px}
+  .custom-item .del{color:var(--err);font-size:13px}
+  .custom-form{margin-top:10px;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:13px}
+  .cfg-body .mini{padding:5px 12px;font-size:12.5px}
+
+  @media (max-width:900px){
+    #sidebar{width:210px}
+    #scroll{padding:18px 16px 60px}
+  }
 </style>
 </head>
 <body>
-  <div class="topbar">
-    <span class="brand">▮▮</span>
-    <h1>Media Factory</h1>
-    <span class="sub">自媒体内容生产线：改写 · 生图 · 播客 · 视频（含字幕）</span>
-    <span class="spacer"></span>
-    <button class="iconbtn" onclick="newTask()">＋ 新建任务</button>
-    <button class="iconbtn" onclick="toggleTheme()">🌓 主题</button>
-    <button class="iconbtn" onclick="openConfig()">⚙ 配置</button>
-  </div>
+  <!-- ===== 侧边栏 ===== -->
+  <aside id="sidebar">
+    <div class="side-top">
+      <div class="brand">
+        <div class="logo">▮▮</div>
+        <div class="name">Media Factory<small>内容生产线</small></div>
+      </div>
+      <button id="btnNew" onclick="newTask()">＋ 新建任务</button>
+    </div>
+    <div class="side-label">历史任务</div>
+    <div id="taskList"></div>
+  </aside>
 
-  <div class="line" id="line">
-    <div class="station" data-step="rewrite"><span class="num">STEP 01</span><span class="dot"></span><div class="name">改写</div><div class="desc">爆款文案</div></div>
-    <div class="station" data-step="image"><span class="num">STEP 02</span><span class="dot"></span><div class="name">生图</div><div class="desc">核心意象配图</div></div>
-    <div class="station" data-step="podcast"><span class="num">STEP 03</span><span class="dot"></span><div class="name">播客</div><div class="desc">双人对话音频</div></div>
-    <div class="station" data-step="video"><span class="num">STEP 04</span><span class="dot"></span><div class="name">视频</div><div class="desc">图片 + 音频 + 字幕</div></div>
-  </div>
-
-  <div class="grid">
-    <div class="panel">
-      <h2>投料</h2>
-      <div class="field">
-        <label>参考文案（必填） <button class="ghost small" id="docBtn">📎 上传文档</button><input type="file" id="docFile" accept=".md,.txt,.markdown,text/plain" hidden></label>
-        <textarea id="text" placeholder="粘贴参考文案，或点击上方「上传文档」导入 .md / .txt 文件"></textarea>
-      </div>
-      <div class="field">
-        <label>改写要求（可选，叠加在系统爆款要求之上）</label>
-        <textarea id="prompt" class="small" placeholder="如：面向小红书，语气活泼，500 字左右"></textarea>
-      </div>
-      <div class="field">
-        <label>生图要求（可选） <button class="ghost small" id="imgBtn">📎 上传参考图</button><input type="file" id="file" accept="image/*" hidden multiple></label>
-        <textarea id="imagePrompt" class="small" placeholder="如：扁平插画风，暖色调"></textarea>
-        <div class="rowline">
-          <label class="check" style="margin:0">尺寸
-            <select id="imgSize">
-              <option value="square">方形 1:1（默认）</option>
-              <option value="portrait">手机竖屏 9:16</option>
-              <option value="landscape">横屏 16:9</option>
-            </select>
-          </label>
-          <label class="check" style="margin:0"><input type="checkbox" id="disclaimer"> 追加免责声明</label>
-        </div>
-        <div class="hint">免责声明：以上内容仅代表个人观点。不构成投资建议。</div>
-        <div id="refList"></div>
-      </div>
-      <div class="field">
-        <label>播客风格要求（可选）</label>
-        <textarea id="podcastPrompt" class="small" placeholder="如：轻松幽默，两位主播多互动"></textarea>
-      </div>
-      <div class="field">
-        <label>播客人数与人物</label>
-        <div class="podset">
-          <select id="speakerCount">
-            <option value="2">2 人（双人对话）</option>
-            <option value="1">1 人（单人播报）</option>
-          </select>
-          <select id="speaker1"></select>
-          <select id="speaker2"></select>
-        </div>
-        <div class="hint">留空音色则用配置默认；仅火山播客 provider 生效。</div>
-      </div>
-      <div class="field">
-        <label>任务 ID（可选，留空自动生成）</label>
-        <input type="text" id="taskId" placeholder="如 20260830-171442">
-      </div>
-      <div class="btns">
-        <button onclick="run('run')">🚀 一键全流程</button>
-        <button class="ghost" onclick="run('rewrite')">仅改写</button>
-        <button class="ghost" onclick="run('image')">仅生图</button>
-        <button class="ghost" onclick="run('podcast')">仅播客</button>
-        <button class="ghost" onclick="run('video')">仅视频</button>
-      </div>
+  <!-- ===== 主区 ===== -->
+  <main id="main">
+    <header id="topbar">
+      <div id="curTask"><span style="color:var(--muted)">未选择任务</span></div>
+      <span class="spacer"></span>
       <div id="status"></div>
-    </div>
+      <button class="iconbtn" onclick="toggleTheme()">🌓 主题</button>
+      <button class="iconbtn" onclick="openConfig()">⚙ 配置</button>
+    </header>
 
-    <div class="panel">
-      <h2>实时产出</h2>
-      <div id="result"><div class="empty">尚未开始，点击上方「一键全流程」或「仅改写」</div></div>
-      <h2 style="margin-top:22px">任务档案</h2>
-      <div id="tasks"></div>
+    <div id="scroll">
+      <div id="tlWrap">
+        <div id="timeline"></div>
+        <div id="actionBar">
+          <input type="text" id="taskId" placeholder="任务 ID（可选，留空自动生成）">
+          <button class="btn-primary" id="btnRunAll" onclick="run('run')">🚀 一键全流程</button>
+        </div>
+      </div>
     </div>
-  </div>
+  </main>
+
+  <!-- 灯箱 -->
+  <div id="lightbox" onclick="this.classList.remove('show')"><img id="lightboxImg" alt="预览"></div>
 
   <!-- 配置弹窗 -->
   <div class="overlay" id="cfgOverlay">
@@ -246,33 +285,33 @@
         <section>
           <h3>语言模型</h3>
           <div class="cfg-current"><span id="llmCurrent"></span></div>
-          <button class="ghost" onclick="openProviderModal('llm')">⚙ 配置</button>
+          <button class="mini" onclick="openProviderModal('llm')">⚙ 配置</button>
           <div class="hint">默认 pi agent（由 pi 管理认证）；也可选用自定义 provider。</div>
         </section>
         <section>
           <h3>生图 provider</h3>
           <div class="cfg-current"><span id="imageCurrent"></span></div>
-          <button class="ghost" onclick="openProviderModal('image')">⚙ 配置</button>
+          <button class="mini" onclick="openProviderModal('image')">⚙ 配置</button>
         </section>
         <section>
           <h3>播客 provider</h3>
           <div class="cfg-current"><span id="podcastCurrent"></span></div>
-          <button class="ghost" onclick="openProviderModal('podcast')">⚙ 配置</button>
+          <button class="mini" onclick="openProviderModal('podcast')">⚙ 配置</button>
         </section>
         <section>
           <h3>自定义 provider（Other）</h3>
           <div id="cfgCustoms"></div>
-          <button class="ghost" onclick="toggleCustomForm()">+ 添加自定义 provider</button>
+          <button class="mini" onclick="toggleCustomForm()">+ 添加自定义 provider</button>
           <div id="customForm" class="custom-form" style="display:none">
             <div class="row"><input type="text" id="cName" placeholder="名称"></div>
             <div class="row"><input type="text" id="cBase" placeholder="BaseURL（https://…/v1）"></div>
             <div class="row"><input type="text" id="cKey" placeholder="API Key"></div>
-            <div class="row"><button class="ghost" onclick="fetchCustomModels()">获取模型</button><select id="cModel"><option value="">— 点击「获取模型」拉取 —</option></select></div>
-            <button onclick="addCustom()">添加</button>
+            <div class="row"><button class="mini" onclick="fetchCustomModels()">获取模型</button><select id="cModel"><option value="">— 点击「获取模型」拉取 —</option></select></div>
+            <button class="btn-primary" style="padding:8px 16px;font-size:13px" onclick="addCustom()">添加</button>
           </div>
         </section>
       </div>
-      <div class="cfg-foot"><button class="ghost" onclick="closeConfig()">取消</button><button onclick="saveConfig()">保存</button></div>
+      <div class="cfg-foot"><button class="btn-ghost" onclick="closeConfig()">取消</button><button class="btn-primary" style="padding:9px 18px" onclick="saveConfig()">保存</button></div>
     </div>
   </div>
 
@@ -281,540 +320,621 @@
     <div class="cfg-modal" style="width:440px">
       <div class="cfg-head"><span id="pmTitle">配置</span><button class="x" onclick="closeProviderModal()">×</button></div>
       <div class="cfg-body" id="pmBody"></div>
-      <div class="cfg-foot"><button class="ghost" onclick="closeProviderModal()">取消</button><button onclick="saveProviderModal()">保存</button></div>
+      <div class="cfg-foot"><button class="btn-ghost" onclick="closeProviderModal()">取消</button><button class="btn-primary" style="padding:9px 18px" onclick="saveProviderModal()">保存</button></div>
     </div>
   </div>
 
 <script>
-const state = { refPath:null, refImages:[], fileName:null, currentId:null, es:null };
+/* ============================================================
+ * 状态与常量
+ * ============================================================ */
+const state = { currentId:null, es:null, refImages:[], view:'input' };
+const STEPS = [
+  { id:'rewrite', num:'01', name:'改写',   sub:'爆款文案' },
+  { id:'image',   num:'02', name:'生图',   sub:'核心意象配图' },
+  { id:'podcast', num:'03', name:'播客',   sub:'双人对话音频' },
+  { id:'video',   num:'04', name:'视频',   sub:'图片 + 音频 + 字幕' },
+];
 const ARTIFACT_META = {
-  'rewritten.md': { step:'rewrite', cap:'改写文案', kind:'text' },
-  'script.md':    { step:'podcast', cap:'播客脚本', kind:'text' },
-  'subtitle.srt': { step:'podcast', cap:'字幕', kind:'text' },
-  'image.png':    { step:'image', cap:'配图', kind:'image' },
+  'rewritten.md': { step:'rewrite', cap:'改写文案', kind:'text', editable:true },
+  'script.md':    { step:'podcast', cap:'播客脚本', kind:'text', editable:true },
+  'subtitle.srt': { step:'podcast', cap:'字幕',     kind:'text', editable:false },
+  'image.png':    { step:'image',   cap:'配图',     kind:'image' },
   'podcast.mp3':  { step:'podcast', cap:'播客音频', kind:'audio' },
-  'video.mp4':    { step:'video', cap:'成品视频', kind:'video' },
+  'video.mp4':    { step:'video',   cap:'成品视频', kind:'video' },
 };
-
-// ===== 主题 =====
-function toggleTheme() {
-  const cur = document.documentElement.getAttribute('data-theme');
-  const next = cur === 'dark' ? 'light' : 'dark';
-  document.documentElement.setAttribute('data-theme', next);
-  localStorage.setItem('mf-theme', next);
-}
-(function initTheme(){
-  const saved = localStorage.getItem('mf-theme');
-  const sys = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
-  document.documentElement.setAttribute('data-theme', saved || sys);
-})();
-
-// ===== 播客音色下拉 =====
 const PODCAST_VOICES = [
   { id:'zh_female_mizaitongxue_v2_saturn_bigtts', label:'黑猫侦探社·咪仔（女）' },
   { id:'zh_male_dayixiansheng_v2_saturn_bigtts', label:'大医先生（男）' },
   { id:'zh_male_liufei_v2_saturn_bigtts', label:'刘飞（男）' },
   { id:'zh_male_xiaolei_v2_saturn_bigtts', label:'潇磊（男）' },
 ];
-function voiceOptions() {
-  return '<option value="">默认音色</option>' + PODCAST_VOICES.map(v => `<option value="${v.id}">${v.label}</option>`).join('');
+
+function esc(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function nowTime(){ const d=new Date(); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')+':'+String(d.getSeconds()).padStart(2,'0'); }
+function setStatus(msg,isErr){ const el=document.getElementById('status'); el.className=isErr?'err':''; el.innerHTML=msg; }
+function stepName(s){ return {rewrite:'改写',image:'生图',podcast:'播客',video:'视频'}[s]||s; }
+function voiceOptions(){ return '<option value="">默认音色</option>'+PODCAST_VOICES.map(v=>`<option value="${v.id}">${v.label}</option>`).join(''); }
+
+/* ============================================================
+ * 主题
+ * ============================================================ */
+function toggleTheme(){
+  const cur=document.documentElement.getAttribute('data-theme');
+  const next=cur==='dark'?'light':'dark';
+  document.documentElement.setAttribute('data-theme',next);
+  localStorage.setItem('mf-theme',next);
 }
-(function initPodcastSet(){
-  document.getElementById('speaker1').innerHTML = voiceOptions();
-  document.getElementById('speaker2').innerHTML = voiceOptions();
-  const cnt = document.getElementById('speakerCount');
-  cnt.addEventListener('change', () => {
-    document.getElementById('speaker2').style.display = cnt.value === '1' ? 'none' : 'block';
-  });
+(function initTheme(){
+  const saved=localStorage.getItem('mf-theme');
+  const sys=window.matchMedia('(prefers-color-scheme: light)').matches?'light':'dark';
+  document.documentElement.setAttribute('data-theme',saved||sys);
 })();
 
-// ===== 参考图（多附件，点击上传）与参考文档附件 =====
-const imgBtn = document.getElementById('imgBtn'), fileInput = document.getElementById('file');
-imgBtn.addEventListener('click', () => fileInput.click());
-fileInput.addEventListener('change', () => { for (const f of fileInput.files) uploadImage(f); fileInput.value=''; });
-
-async function uploadImage(file) {
-  const fd = new FormData(); fd.append('file', file);
-  try {
-    const res = await fetch('/api/upload', { method:'POST', body:fd });
-    const d = await res.json();
-    if (d.ok) { state.refImages.push(d.path); renderRefImages(); }
-    else setStatus('图片上传失败：' + d.error, true);
-  } catch(e){ setStatus('图片上传失败：' + e.message, true); }
+/* ============================================================
+ * 时间线骨架：四张步骤卡片（投料态表单 hardcode）
+ * ============================================================ */
+function stepInputPane(step){
+  if(step==='rewrite') return `
+    <div class="f"><label>参考文案 * <button class="mini" id="docBtn">📎 上传文档</button><input type="file" id="docFile" accept=".md,.txt,.markdown,text/plain" hidden></label>
+      <textarea id="text" placeholder="粘贴参考文案，或点击「上传文档」导入 .md / .txt 文件"></textarea></div>
+    <div class="f"><label>改写要求（可选，叠加在系统爆款要求之上）</label>
+      <textarea id="prompt" class="sm" placeholder="如：面向小红书，语气活泼，500 字左右"></textarea></div>`;
+  if(step==='image') return `
+    <div class="f"><label>生图要求（可选） <button class="mini" id="imgBtn">📎 上传参考图</button><input type="file" id="file" accept="image/*" hidden multiple></label>
+      <textarea id="imagePrompt" class="sm" placeholder="如：扁平插画风，暖色调"></textarea>
+      <div id="refList"></div></div>
+    <div class="frow">
+      <label class="chk">尺寸 <select id="imgSize">
+        <option value="square">方形 1:1（默认）</option>
+        <option value="portrait">手机竖屏 9:16</option>
+        <option value="landscape">横屏 16:9</option>
+      </select></label>
+      <label class="chk"><input type="checkbox" id="disclaimer"> 追加免责声明</label>
+    </div>
+    <div class="hint">免责声明：以上内容仅代表个人观点。不构成投资建议。</div>`;
+  if(step==='podcast') return `
+    <div class="f"><label>播客风格要求（可选）</label>
+      <textarea id="podcastPrompt" class="sm" placeholder="如：轻松幽默，两位主播多互动"></textarea></div>
+    <div class="frow">
+      <label class="chk">人数 <select id="speakerCount">
+        <option value="2">2 人（双人对话）</option>
+        <option value="1">1 人（单人播报）</option>
+      </select></label>
+      <label class="chk">主持人 <select id="speaker1">${voiceOptions()}</select></label>
+      <label class="chk" id="speaker2Wrap">嘉宾 <select id="speaker2">${voiceOptions()}</select></label>
+    </div>
+    <div class="hint">留空音色则用配置默认；仅火山播客 provider 生效。</div>`;
+  if(step==='video') return `
+    <div class="hint" style="padding:4px 0">视频步骤自动使用上方配图与播客音频合成（含字幕），无需额外输入。待播客与配图就绪后执行。</div>`;
+  return '';
 }
 
-function renderRefImages() {
-  const el = document.getElementById('refList');
-  el.innerHTML = '';
-  if (!state.refImages.length) { el.innerHTML = ''; return; }
-  for (let i = 0; i < state.refImages.length; i++) {
-    const p = state.refImages[i];
-    const name = p.split('/').pop();
-    const d = document.createElement('span');
-    d.className = 'refitem';
-    d.innerHTML = `🖼 ${name} <button class="x" onclick="removeRef(${i})">×</button>`;
+function renderTimeline(){
+  const tl=document.getElementById('timeline');
+  tl.innerHTML='';
+  for(const s of STEPS){
+    const row=document.createElement('div');
+    row.className='step-row';
+    row.dataset.step=s.id;
+    row.dataset.state='input';
+    row.innerHTML=`
+      <span class="tl-dot"></span>
+      <div class="step-card">
+        <div class="card-head" onclick="toggleCard('${s.id}')">
+          <span class="step-num">STEP ${s.num}</span>
+          <span class="card-title">${s.name}</span>
+          <span class="card-sub">${s.sub}</span>
+          <span class="card-status"><span class="badge idle" data-badge>待投料</span></span>
+          <span class="chev">▼</span>
+        </div>
+        <div class="card-body">
+          <div class="pane pane-input">${stepInputPane(s.id)}
+            <div class="step-actions"><button class="btn-ghost" onclick="event.stopPropagation();run('${s.id}')">▶ 执行此步骤</button></div>
+          </div>
+          <div class="pane pane-run">
+            <div class="run-idle">⏸ 等待上游步骤完成 · <a onclick="event.stopPropagation();toInput('${s.id}')">为此步骤投料并执行</a></div>
+            <div class="log-area"></div>
+            <div class="artifact-area"></div>
+          </div>
+        </div>
+      </div>`;
+    tl.appendChild(row);
+  }
+  bindInputEvents();
+}
+
+function cardRow(step){ return document.querySelector(`.step-row[data-step="${step}"]`); }
+function toggleCard(step){ cardRow(step).classList.toggle('collapsed'); }
+function collapseCard(step,v){ cardRow(step).classList.toggle('collapsed',v); }
+
+function setBadge(step,text,cls){
+  const b=cardRow(step).querySelector('[data-badge]');
+  if(b){ b.textContent=text; b.className='badge '+cls; }
+}
+
+function setCardState(step,st){
+  const row=cardRow(step); if(!row) return;
+  row.dataset.state=st;
+  const map={input:['待投料','idle'],idle:['等待上游','idle'],thinking:['思考中','thinking'],done:['已完成','done'],failed:['失败','failed']};
+  const m=map[st]||['待投料','idle'];
+  setBadge(step,m[0],m[1]);
+  // 思考中的卡片展开，其它可折叠
+  if(st==='thinking') collapseCard(step,false);
+}
+/* 运行视图中，把某步骤切回投料态以便单步执行 */
+function toInput(step){ setCardState(step,'input'); collapseCard(step,false); setStatus('已为「'+stepName(step)+'」步骤切换到投料态'); }
+
+/* ============================================================
+ * 投料：上传（文档/参考图）
+ * ============================================================ */
+function bindInputEvents(){
+  const docBtn=document.getElementById('docBtn'),docFile=document.getElementById('docFile');
+  if(docBtn){ docBtn.onclick=()=>docFile.click(); docFile.onchange=()=>{ const f=docFile.files[0]; if(f) uploadDoc(f); docFile.value=''; }; }
+  const imgBtn=document.getElementById('imgBtn'),fileInput=document.getElementById('file');
+  if(imgBtn){ imgBtn.onclick=()=>fileInput.click(); fileInput.onchange=()=>{ for(const f of fileInput.files) uploadImage(f); fileInput.value=''; }; }
+  const cnt=document.getElementById('speakerCount');
+  if(cnt){ cnt.onchange=()=>{ document.getElementById('speaker2Wrap').style.display=cnt.value==='1'?'none':'flex'; }; }
+}
+
+async function uploadImage(file){
+  const fd=new FormData(); fd.append('file',file);
+  try{
+    const res=await fetch('/api/upload',{method:'POST',body:fd});
+    const d=await res.json();
+    if(d.ok){ state.refImages.push(d.path); renderRefImages(); }
+    else setStatus('图片上传失败：'+d.error,true);
+  }catch(e){ setStatus('图片上传失败：'+e.message,true); }
+}
+function renderRefImages(){
+  const el=document.getElementById('refList'); if(!el) return;
+  el.innerHTML='';
+  state.refImages.forEach((p,i)=>{
+    const name=p.split('/').pop();
+    const d=document.createElement('span'); d.className='refitem';
+    d.innerHTML=`🖼 ${esc(name)} <button class="x" onclick="removeRef(${i})">×</button>`;
     el.appendChild(d);
+  });
+}
+function removeRef(i){ state.refImages.splice(i,1); renderRefImages(); }
+
+async function uploadDoc(file){
+  const fd=new FormData(); fd.append('file',file);
+  try{
+    const res=await fetch('/api/upload',{method:'POST',body:fd});
+    const d=await res.json();
+    if(d.ok&&d.content!==undefined){
+      const ta=document.getElementById('text');
+      ta.value=ta.value?(ta.value+'\n\n'+d.content):d.content;
+      setStatus('✓ 已导入文档：'+file.name);
+    } else setStatus('文档导入失败：'+(d.error||'未知'),true);
+  }catch(e){ setStatus('文档导入失败：'+e.message,true); }
+}
+
+/* ============================================================
+ * 视图切换：投料态 / 运行态
+ * ============================================================ */
+function enterInputView(){
+  state.view='input';
+  document.getElementById('actionBar').style.display='flex';
+  for(const s of STEPS){
+    setCardState(s.id,'input');
+    collapseCard(s.id,false);
+    clearRunPane(s.id);
   }
 }
-function removeRef(i) { state.refImages.splice(i, 1); renderRefImages(); }
-
-// 参考文档：上传 md/txt，读取内容填入文案输入框
-const docBtn = document.getElementById('docBtn'), docFile = document.getElementById('docFile');
-docBtn.addEventListener('click', () => docFile.click());
-docFile.addEventListener('change', () => { const f = docFile.files[0]; if (f) uploadDoc(f); docFile.value=''; });
-async function uploadDoc(file) {
-  const fd = new FormData(); fd.append('file', file);
-  try {
-    const res = await fetch('/api/upload', { method:'POST', body:fd });
-    const d = await res.json();
-    if (d.ok && d.content !== undefined) {
-      const ta = document.getElementById('text');
-      ta.value = ta.value ? (ta.value + '\n\n' + d.content) : d.content;
-      setStatus('✓ 已导入文档内容：' + file.name);
-    } else { setStatus('文档导入失败：' + (d.error || '未知'), true); }
-  } catch(e){ setStatus('文档导入失败：' + e.message, true); }
+function enterRunView(){
+  state.view='run';
+  document.getElementById('actionBar').style.display='none';
+}
+function clearRunPane(step){
+  const row=cardRow(step); if(!row) return;
+  const la=row.querySelector('.log-area'); if(la) la.innerHTML='';
+  const aa=row.querySelector('.artifact-area'); if(aa) aa.innerHTML='';
 }
 
-function setStatus(msg, isErr) { const el = document.getElementById('status'); el.className = isErr ? 'err' : ''; el.innerHTML = msg; }
-
-// ===== 新建任务：清空工作区，进入新任务输入态 =====
-function newTask() {
-  if (state.es) { state.es.close(); state.es = null; }
-  state.currentId = null;
-  document.getElementById('text').value = '';
-  document.getElementById('prompt').value = '';
-  document.getElementById('imagePrompt').value = '';
-  document.getElementById('podcastPrompt').value = '';
-  document.getElementById('taskId').value = '';
-  document.getElementById('speakerCount').value = '2';
-  document.getElementById('speaker1').value = '';
-  document.getElementById('speaker2').value = '';
-  document.getElementById('speaker2').style.display = 'block';
-  document.getElementById('disclaimer').checked = false;
-  document.getElementById('imgSize').value = 'square';
-  state.refImages = [];
-  renderRefImages();
-  document.getElementById('result').innerHTML = '<div class="empty">尚未开始，点击上方「一键全流程」或「仅改写」</div>';
-  resetLine();
-  setStatus('新任务已就绪，粘贴参考文案后开始');
-  document.getElementById('text').focus();
+/* ============================================================
+ * 思考日志
+ * ============================================================ */
+function appendLog(step,text){
+  const row=cardRow(step); if(!row) return;
+  const area=row.querySelector('.log-area'); if(!area) return;
+  const line=document.createElement('div');
+  line.className='log-line';
+  line.innerHTML=`<span class="tick">▸</span><span class="lt">${nowTime()}</span><span>${esc(text)}</span>`;
+  area.appendChild(line);
+  area.scrollTop=area.scrollHeight;
 }
 
-// ===== 生产线状态 =====
-function setStep(step, status) {
-  const st = document.querySelector(`.station[data-step="${step}"]`);
-  if (!st) return;
-  st.classList.remove('done','running','failed');
-  if (status) st.classList.add(status);
-}
-function resetLine() { ['rewrite','image','podcast','video'].forEach(s => setStep(s, null)); }
-
-// ===== 执行（后台 + SSE）=====
-async function run(step) {
-  const text = document.getElementById('text').value.trim();
-  const prompt = document.getElementById('prompt').value.trim();
-  const imagePrompt = document.getElementById('imagePrompt').value.trim();
-  const podcastPrompt = document.getElementById('podcastPrompt').value.trim();
-  const id = document.getElementById('taskId').value.trim() || null;
-
-  if ((step === 'run' || step === 'rewrite') && !text) { setStatus('请先填写参考文案', true); return; }
-
-  const body = {};
-  if (step === 'run' || step === 'rewrite') body.text = text;
-  if ((step === 'run' || step === 'rewrite') && prompt) body.prompt = prompt;
-  if (step === 'run' && imagePrompt) body.image_prompt = imagePrompt;
-  if (step === 'image' && imagePrompt) body.prompt = imagePrompt;
-  if (step === 'run' && podcastPrompt) body.podcast_prompt = podcastPrompt;
-  if (step === 'podcast' && podcastPrompt) body.prompt = podcastPrompt;
-  // 播客人数/音色（任务级参数）
-  if (step === 'run' || step === 'podcast') {
-    body.speaker_count = parseInt(document.getElementById('speakerCount').value) || 2;
-    const s1 = document.getElementById('speaker1').value.trim();
-    const s2 = document.getElementById('speaker2').value.trim();
-    if (s1) body.speaker1 = s1;
-    if (s2 && body.speaker_count === 2) body.speaker2 = s2;
+/* ============================================================
+ * 产物渲染
+ * ============================================================ */
+function renderArtifact(step,name,url){
+  const meta=ARTIFACT_META[name]; if(!meta) return;
+  const row=cardRow(meta.step); if(!row) return;
+  const area=row.querySelector('.artifact-area'); if(!area) return;
+  let box=area.querySelector(`[data-artifact="${name}"]`);
+  if(!box){
+    box=document.createElement('div');
+    box.className='artifact';
+    box.dataset.artifact=name;
+    area.appendChild(box);
   }
-  if (id) body.id = id;
-  else if (state.currentId && step !== 'rewrite' && step !== 'run') body.id = state.currentId;
-  if ((step === 'run' || step === 'image') && state.refImages.length) body.ref_images = state.refImages;
-  if ((step === 'run' || step === 'image') && document.getElementById('disclaimer').checked) body.disclaimer = true;
-  if (step === 'run' || step === 'image') body.size = document.getElementById('imgSize').value;
+  const cap=`<div class="cap">${meta.cap} <span class="fname">${name}</span></div>`;
+  if(meta.kind==='image'){
+    box.innerHTML=cap+`<img class="prev" src="${url}" onclick="openLightbox('${url}')">`;
+  } else if(meta.kind==='audio'){
+    box.innerHTML=cap+`<audio controls src="${url}"></audio>`;
+  } else if(meta.kind==='video'){
+    box.innerHTML=cap+`<video controls src="${url}"></video>`;
+  } else if(meta.kind==='text'){
+    if(meta.editable){
+      box.innerHTML=cap+`<textarea rows="9"></textarea>
+        <div class="savebar"><button class="savebtn">💾 保存修改</button><span class="saved-tip" style="display:none">✓ 已保存，后续步骤将基于修改后的内容</span></div>`;
+      const ta=box.querySelector('textarea');
+      const tip=box.querySelector('.saved-tip');
+      box.querySelector('.savebtn').onclick=()=>saveText(name,url,ta,tip);
+      fetch(url).then(r=>r.text()).then(t=>{ ta.value=t; });
+    } else {
+      box.innerHTML=cap+`<div class="txt placeholder">加载中…</div>`;
+      fetch(url).then(r=>r.text()).then(t=>{ const x=box.querySelector('.txt'); if(x){x.textContent=t;x.classList.remove('placeholder');} });
+    }
+  }
+}
 
+async function saveText(name,url,ta,tip){
+  try{
+    const res=await fetch(url,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:ta.value})});
+    const d=await res.json();
+    if(d.ok){ if(tip){tip.style.display='inline'; setTimeout(()=>tip.style.display='none',3000);} setStatus('✓ 已保存 '+name); }
+    else setStatus('保存失败：'+(d.error||'未知'),true);
+  }catch(e){ setStatus('保存失败：'+e.message,true); }
+}
+
+function openLightbox(url){
+  document.getElementById('lightboxImg').src=url;
+  document.getElementById('lightbox').classList.add('show');
+}
+
+/* ============================================================
+ * 执行（后台 + SSE）
+ * ============================================================ */
+function collectInputs(step){
+  const gv=id=>{ const el=document.getElementById(id); return el?el.value.trim():''; };
+  const body={};
+  if(step==='run'||step==='rewrite'){ body.text=gv('text'); if(gv('prompt')) body.prompt=gv('prompt'); }
+  if(step==='run'&&gv('imagePrompt')) body.image_prompt=gv('imagePrompt');
+  if(step==='image'&&gv('imagePrompt')) body.prompt=gv('imagePrompt');
+  if(step==='run'&&gv('podcastPrompt')) body.podcast_prompt=gv('podcastPrompt');
+  if(step==='podcast'&&gv('podcastPrompt')) body.prompt=gv('podcastPrompt');
+  if(step==='run'||step==='podcast'){
+    body.speaker_count=parseInt(document.getElementById('speakerCount').value)||2;
+    const s1=gv('speaker1'),s2=gv('speaker2');
+    if(s1) body.speaker1=s1;
+    if(s2&&body.speaker_count===2) body.speaker2=s2;
+  }
+  const id=gv('taskId');
+  if(id) body.id=id;
+  else if(state.currentId&&step!=='rewrite'&&step!=='run') body.id=state.currentId;
+  if((step==='run'||step==='image')&&state.refImages.length) body.ref_images=state.refImages;
+  if((step==='run'||step==='image')&&document.getElementById('disclaimer').checked) body.disclaimer=true;
+  if(step==='run'||step==='image') body.size=document.getElementById('imgSize').value;
+  return body;
+}
+
+async function run(step){
+  const body=collectInputs(step);
+  if((step==='run'||step==='rewrite')&&!body.text){ setStatus('请先在「改写」步骤填写参考文案',true); return; }
   setStatus('<span class="spin"></span>启动任务…');
-
-  try {
-    const res = await fetch('/api/' + step, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
-    const d = await res.json();
-    if (!d.ok) { setStatus('出错：' + (d.error || '未知'), true); return; }
-    const taskId = d.id;
-    state.currentId = taskId;
-    document.getElementById('taskId').value = taskId;
-    // 准备工作区
-    if (step === 'run' || step === 'rewrite') { resetLine(); document.getElementById('result').innerHTML = ''; }
-    subscribe(taskId, step);
-    setStatus('<span class="spin"></span>任务 ' + taskId + ' 运行中…');
-  } catch(e){ setStatus('请求失败：' + e.message, true); }
-}
-
-function subscribe(taskId, triggerStep) {
-  if (state.es) state.es.close();
-  // 先回放当前状态（补齐建立 SSE 前可能已发生的事件）
-  fetch('/api/tasks/' + taskId).then(r => r.json()).then(t => replayTask(t)).catch(()=>{});
-  const es = new EventSource('/api/tasks/' + taskId + '/events');
-  state.es = es;
-  es.onmessage = (e) => {
-    let ev; try { ev = JSON.parse(e.data); } catch(_) { return; }
-    handleEvent(ev);
-  };
-  es.onerror = () => { es.close(); };
-}
-
-function replayTask(t) {
-  // 根据 task.json 的 steps 状态设置生产线节点
-  const steps = t.steps || {};
-  for (const [step, st] of Object.entries(steps)) {
-    if (st === 'done' || st === 'running' || st === 'failed') setStep(step, st);
-  }
-  // 渲染已产出的中间产物
-  for (const a of (t.artifacts || [])) {
-    const meta = ARTIFACT_META[a.name];
-    if (meta) showArtifact(meta.step, a.name, a.url);
-  }
-  if (t.status === 'failed') setStatus('✗ 失败：' + (t.error || '未知'), true);
-}
-
-function handleEvent(ev) {
-  if (ev.type === 'step') {
-    setStep(ev.step, ev.status);
-    if (ev.status === 'running') setStatus('<span class="spin"></span>正在执行：' + stepName(ev.step) + '…');
-  } else if (ev.type === 'chunk') {
-    typewriter(ev.step, ev.delta);
-  } else if (ev.type === 'artifact') {
-    showArtifact(ev.step, ev.name, ev.url);
-  } else if (ev.type === 'task') {
-    if (ev.status === 'done') { setStatus('✓ 完成'); loadTasks(); }
-    else if (ev.status === 'failed') { setStatus('✗ 失败：' + (ev.error || '未知'), true); loadTasks(); }
-  }
-}
-
-function stepName(s) { return {rewrite:'改写',image:'生图',podcast:'播客',video:'视频'}[s] || s; }
-
-// 打字机：把完整文本逐字渲染到对应产物面板；结束后转成可编辑 textarea
-function typewriter(step, text) {
-  const name = step === 'rewrite' ? 'rewritten.md' : 'script.md';
-  const meta = ARTIFACT_META[name];
-  const el = ensureArtifact(step, meta.cap, 'txt');
-  el.innerHTML = '';
-  let i = 0;
-  const timer = setInterval(() => {
-    el.textContent = text.slice(0, ++i);
-    if (i >= text.length) {
-      clearInterval(timer);
-      finalizeEditable(el, name);
+  try{
+    const res=await fetch('/api/'+step,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const d=await res.json();
+    if(!d.ok){ setStatus('出错：'+(d.error||'未知'),true); return; }
+    const taskId=d.id;
+    state.currentId=taskId;
+    updateCurTask(taskId,'运行中');
+    // 切到运行视图：清空所有运行面板，按流程预设步骤状态
+    enterRunView();
+    const flow = step==='run' ? ['rewrite','image','podcast','video'] : [step];
+    for(const s of STEPS){
+      clearRunPane(s.id);
+      setCardState(s.id, flow.includes(s.id)?'idle':'idle');
+      collapseCard(s.id,true);
     }
-  }, 12);
+    subscribe(taskId);
+    setStatus('<span class="spin"></span>任务 '+taskId+' 运行中…');
+  }catch(e){ setStatus('请求失败：'+e.message,true); }
 }
 
-// 把文本展示转成可编辑 textarea + 保存按钮
-function finalizeEditable(box, name) {
-  const text = box.textContent || '';
-  const url = `/api/files/${state.currentId}/${name}`;
-  box.innerHTML = `<div class="cap">${ARTIFACT_META[name].cap} · ${name}（可编辑）</div><textarea class="txt" rows="10"></textarea><button class="ghost" style="margin-top:6px">💾 保存修改</button>`;
-  const ta = box.querySelector('textarea');
-  ta.value = text;
-  box.querySelector('button').onclick = () => saveText(name, url, ta);
+function subscribe(taskId){
+  if(state.es) state.es.close();
+  fetch('/api/tasks/'+taskId).then(r=>r.json()).then(t=>replayTask(t)).catch(()=>{});
+  const es=new EventSource('/api/tasks/'+taskId+'/events');
+  state.es=es;
+  es.onmessage=(e)=>{ let ev; try{ev=JSON.parse(e.data);}catch(_){return;} handleEvent(ev); };
+  es.onerror=()=>{ es.close(); };
 }
 
-async function saveText(name, url, ta) {
-  const content = ta.value;
-  try {
-    const res = await fetch(url, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({content}) });
-    const d = await res.json();
-    if (d.ok) setStatus('✓ 已保存 ' + name + '，后续步骤将基于修改后的内容');
-    else setStatus('保存失败：' + (d.error||'未知'), true);
-  } catch(e){ setStatus('保存失败：' + e.message, true); }
-}
-
-function ensureArtifact(step, cap, kind) {
-  const result = document.getElementById('result');
-  let box = result.querySelector(`[data-artifact="${step}-${kind}"]`);
-  if (!box) {
-    box = document.createElement('div');
-    box.className = 'artifact';
-    box.dataset.artifact = step + '-' + kind;
-    box.innerHTML = `<div class="cap">${cap}</div>`;
-    result.appendChild(box);
+function handleEvent(ev){
+  if(ev.type==='log'){ appendLog(ev.step,ev.text); }
+  else if(ev.type==='step'){
+    if(ev.status==='running'){ setCardState(ev.step,'thinking'); setStatus('<span class="spin"></span>正在执行：'+stepName(ev.step)+'…'); updateCurTask(state.currentId,'运行中 · '+stepName(ev.step)); }
+    else if(ev.status==='done'){ setCardState(ev.step,'done'); }
+    else if(ev.status==='failed'){ setCardState(ev.step,'failed'); }
   }
-  return box;
+  else if(ev.type==='artifact'){ renderArtifact(ev.step,ev.name,ev.url); }
+  else if(ev.type==='task'){
+    if(ev.status==='done'){ setStatus('✓ 完成'); updateCurTask(state.currentId,'已完成'); }
+    else if(ev.status==='failed'){ setStatus('✗ 失败：'+(ev.error||'未知'),true); updateCurTask(state.currentId,'失败'); }
+    loadTasks();
+  }
 }
 
-function showArtifact(step, name, url) {
-  const meta = ARTIFACT_META[name];
-  if (!meta) return;
-  const result = document.getElementById('result');
-  let box = result.querySelector(`[data-artifact="${name}"]`);
-  if (!box) {
-    box = document.createElement('div');
-    box.className = 'artifact';
-    box.dataset.artifact = name;
-    box.innerHTML = `<div class="cap">${meta.cap} · ${name}</div>`;
-    result.appendChild(box);
+function updateCurTask(id,statusTxt){
+  document.getElementById('curTask').innerHTML=`<span>${esc(id||'')}</span><span class="tstatus">${esc(statusTxt||'')}</span>`;
+}
+
+/* 回放（建立 SSE 前 / 历史任务） */
+function replayTask(t){
+  const steps=t.steps||{};
+  for(const s of STEPS){
+    const st=steps[s.id]||'pending';
+    if(st==='done') setCardState(s.id,'done');
+    else if(st==='running') setCardState(s.id,'thinking');
+    else if(st==='failed') setCardState(s.id,'failed');
+    else setCardState(s.id,'idle');
   }
-  if (meta.kind === 'image') {
-    box.innerHTML = `<div class="cap">${meta.cap}</div><img class="prev" src="${url}">`;
-  } else if (meta.kind === 'audio') {
-    box.innerHTML = `<div class="cap">${meta.cap}</div><audio controls src="${url}"></audio>`;
-  } else if (meta.kind === 'video') {
-    box.innerHTML = `<div class="cap">${meta.cap}</div><video controls src="${url}"></video>`;
-  } else if (meta.kind === 'text') {
-    const editable = name.endsWith('.md');
-    const existing = box.querySelector('.txt');
-    if (!existing) {
-      if (editable) {
-        box.innerHTML = `<div class="cap">${meta.cap} · ${name}（可编辑）</div><textarea class="txt" rows="10"></textarea><button class="ghost" style="margin-top:6px">💾 保存修改</button>`;
-        const ta = box.querySelector('textarea');
-        box.querySelector('button').onclick = () => saveText(name, url, ta);
-        fetch(url).then(r => r.text()).then(t => { ta.value = t; });
-      } else {
-        box.innerHTML = `<div class="cap">${meta.cap}</div><div class="txt placeholder">加载中…</div>`;
-        fetch(url).then(r => r.text()).then(t => {
-          const t2 = box.querySelector('.txt');
-          if (t2 && t2.classList.contains('placeholder')) { t2.textContent = t; t2.classList.remove('placeholder'); }
-        });
-      }
+  for(const a of (t.artifacts||[])){
+    const m=ARTIFACT_META[a.name];
+    if(m) renderArtifact(m.step,a.name,a.url);
+  }
+  if(t.status==='failed') setStatus('✗ 失败：'+(t.error||'未知'),true);
+}
+
+/* ============================================================
+ * 新建任务 / 历史任务
+ * ============================================================ */
+function newTask(){
+  if(state.es){ state.es.close(); state.es=null; }
+  state.currentId=null;
+  state.refImages=[];
+  renderTimeline();
+  renderRefImages();
+  enterInputView();
+  updateCurTask('','新任务（未开始）');
+  document.getElementById('curTask').innerHTML='<span style="color:var(--muted)">新任务 · 请填写各步骤投料</span>';
+  document.getElementById('taskId').value='';
+  setStatus('已就绪：填写投料后点击「一键全流程」或单步执行');
+  document.getElementById('text')?.focus();
+}
+
+async function loadTasks(){
+  try{
+    const res=await fetch('/api/tasks');
+    const d=await res.json();
+    const el=document.getElementById('taskList');
+    el.innerHTML='';
+    const tasks=d.tasks||[];
+    if(!tasks.length){ el.innerHTML='<div class="side-empty">暂无任务</div>'; return; }
+    for(const t of tasks){
+      const st=t.status||'unknown';
+      const cur=t.current_step?(' · '+stepName(t.current_step)):'';
+      const item=document.createElement('div');
+      item.className='task-item'+(t.id===state.currentId?' active':'');
+      item.innerHTML=`<span class="dot ${st}"></span>
+        <div class="meta"><div class="tid">${esc(t.id)}</div><div class="sub">${st==='running'?'运行中'+cur:(t.error?'失败':'')}</div></div>`;
+      item.onclick=()=>loadTask(t.id);
+      el.appendChild(item);
     }
-  }
+  }catch(e){}
 }
 
-// ===== 任务列表 =====
-async function loadTasks() {
-  const res = await fetch('/api/tasks');
-  const d = await res.json();
-  const el = document.getElementById('tasks');
-  el.innerHTML = '';
-  const tasks = d.tasks || [];
-  if (!tasks.length) { el.innerHTML = '<div class="empty">暂无任务</div>'; return; }
-  for (const t of tasks) {
-    const st = t.status || 'unknown';
-    const cur = t.current_step ? stepName(t.current_step) : '';
-    const box = document.createElement('div');
-    box.className = 'task';
-    box.innerHTML = `
-      <div class="task-head">
-        <span class="st ${st}"></span>
-        <span class="tid">${t.id}</span>
-        <span class="step">${st === 'running' ? '运行中 · ' + cur : (t.error ? t.error : '')}</span>
-        <span class="chev">▶</span>
-      </div>
-      <div class="task-body"></div>`;
-    box.querySelector('.task-head').onclick = () => {
-      box.classList.toggle('open');
-      if (box.classList.contains('open')) renderTaskBody(box.querySelector('.task-body'), t);
-    };
-    el.appendChild(box);
-  }
-}
-
-function renderTaskBody(box, t) {
-  box.innerHTML = '';
-  const arts = t.artifacts || [];
-  if (!arts.length) { box.innerHTML = '<div class="empty">无产物</div>'; return; }
-  for (const a of arts) {
-    const meta = ARTIFACT_META[a.name];
-    if (!meta) continue;
-    const d = document.createElement('div');
-    d.className = 'artifact';
-    if (meta.kind === 'image') d.innerHTML = `<div class="cap">${meta.cap}</div><img class="prev" src="${a.url}">`;
-    else if (meta.kind === 'audio') d.innerHTML = `<div class="cap">${meta.cap}</div><audio controls src="${a.url}"></audio>`;
-    else if (meta.kind === 'video') d.innerHTML = `<div class="cap">${meta.cap}</div><video controls src="${a.url}"></video>`;
-    else if (meta.kind === 'text') d.innerHTML = `<div class="cap">${meta.cap}</div><div class="txt placeholder">加载中…</div>`;
-    box.appendChild(d);
-    if (meta.kind === 'text') {
-      fetch(a.url).then(r => r.text()).then(tx => {
-        const t2 = d.querySelector('.txt');
-        if (t2) { t2.textContent = tx; t2.classList.remove('placeholder'); }
-      });
+async function loadTask(id){
+  if(state.es){ state.es.close(); state.es=null; }
+  state.currentId=id;
+  // 切换 active 高亮
+  document.querySelectorAll('.task-item').forEach(el=>el.classList.remove('active'));
+  renderTimeline();
+  enterRunView();
+  try{
+    const t=await (await fetch('/api/tasks/'+id)).json();
+    updateCurTask(id, t.status==='running'?'运行中':(t.status==='done'?'已完成':(t.status==='failed'?'失败':'')));
+    replayTask(t);
+    // 展开有内容的卡片，折叠空的
+    for(const s of STEPS){
+      const row=cardRow(s.id);
+      const hasContent=row.querySelector('.artifact-area').children.length>0 || (t.steps||{})[s.id]==='running';
+      collapseCard(s.id,!hasContent);
     }
-  }
+    if(t.status==='running') subscribe(id);
+    setStatus('');
+  }catch(e){ setStatus('加载任务失败',true); }
 }
 
-loadTasks();
-
-// ===== 配置面板 =====
-const LLM_BUILTINS = [ { key:'pi', label:'pi（pi agent，默认）' } ];
-const IMAGE_BUILTINS = [
-  { key:'nano-banana', label:'nano-banana（官方 Gemini 生图）' },
-  { key:'openai-image', label:'openai-image（gpt-image）' },
-  { key:'doubao-seedream', label:'doubao-seedream（豆包生图）' },
+/* ============================================================
+ * 配置弹窗（沿用逻辑，套新样式）
+ * ============================================================ */
+const LLM_BUILTINS=[{key:'pi',label:'pi（pi agent，默认）'}];
+const IMAGE_BUILTINS=[
+  {key:'nano-banana',label:'nano-banana（官方 Gemini 生图）'},
+  {key:'openai-image',label:'openai-image（gpt-image）'},
+  {key:'doubao-seedream',label:'doubao-seedream（豆包生图）'},
 ];
-const PODCAST_BUILTINS = [
-  { key:'volc-podcast', label:'volc-podcast（火山播客大模型，推荐）', extra:['appid','speaker_count','speaker1','speaker2'] },
-  { key:'openai-tts', label:'openai-tts（通用 TTS）' },
-  { key:'gemini-tts', label:'gemini-tts（通用 TTS）' },
-  { key:'volc-tts', label:'volc-tts（火山豆包语音）', extra:['appid'] },
+const PODCAST_BUILTINS=[
+  {key:'volc-podcast',label:'volc-podcast（火山播客大模型，推荐）',extra:['appid','speaker_count','speaker1','speaker2']},
+  {key:'openai-tts',label:'openai-tts（通用 TTS）'},
+  {key:'gemini-tts',label:'gemini-tts（通用 TTS）'},
+  {key:'volc-tts',label:'volc-tts（火山豆包语音）',extra:['appid']},
 ];
-let CFG = null, CFG_MODELS = [], PM_KIND = null, PM_PROVIDER = null;
+let CFG=null,CFG_MODELS=[],PM_KIND=null,PM_PROVIDER=null;
 
-async function openConfig() {
+async function openConfig(){
   document.getElementById('cfgOverlay').classList.add('show');
-  const res = await fetch('/api/config');
-  const d = await res.json();
-  CFG = d.config || { tasks:{}, providers:{} };
-  CFG_MODELS = d.models || [];
-  CFG.providers = CFG.providers || {}; CFG.tasks = CFG.tasks || {};
+  const res=await fetch('/api/config');
+  const d=await res.json();
+  CFG=d.config||{tasks:{},providers:{}};
+  CFG_MODELS=d.models||[];
+  CFG.providers=CFG.providers||{}; CFG.tasks=CFG.tasks||{};
   renderConfig();
 }
 function closeConfig(){ document.getElementById('cfgOverlay').classList.remove('show'); }
 function customNames(){ return Object.entries(CFG.providers).filter(([,p])=>p.type==='openai-compatible').map(([n])=>n); }
-function builtinMeta(key){ return IMAGE_BUILTINS.find(x=>x.key===key) || PODCAST_BUILTINS.find(x=>x.key===key) || LLM_BUILTINS.find(x=>x.key===key) || null; }
-function labelFor(key){ if(!key) return '未选择'; const m=builtinMeta(key); return m ? m.label : (key+'（自定义）'); }
+function builtinMeta(key){ return IMAGE_BUILTINS.find(x=>x.key===key)||PODCAST_BUILTINS.find(x=>x.key===key)||LLM_BUILTINS.find(x=>x.key===key)||null; }
+function labelFor(key){ if(!key) return '未选择'; const m=builtinMeta(key); return m?m.label:(key+'（自定义）'); }
 function maskKey(k){ if(!k) return ''; if(k.length<=8) return '••••••••'; return k.slice(0,4)+'••••'+k.slice(-4); }
 
 function renderConfig(){
-  const llmKey = CFG.tasks.llm?.provider || 'pi';
-  const llmModel = CFG.providers[llmKey]?.extra?.model;
-  document.getElementById('llmCurrent').textContent = labelFor(llmKey) + (llmModel ? ' · ' + llmModel : '');
-  document.getElementById('imageCurrent').textContent = labelFor(CFG.tasks.image?.provider);
-  document.getElementById('podcastCurrent').textContent = labelFor(CFG.tasks.podcast?.provider);
+  const llmKey=CFG.tasks.llm?.provider||'pi';
+  const llmModel=CFG.providers[llmKey]?.extra?.model;
+  document.getElementById('llmCurrent').textContent=labelFor(llmKey)+(llmModel?' · '+llmModel:'');
+  document.getElementById('imageCurrent').textContent=labelFor(CFG.tasks.image?.provider);
+  document.getElementById('podcastCurrent').textContent=labelFor(CFG.tasks.podcast?.provider);
   renderCustoms();
 }
 
 function pmField(label,id,val,secret){
-  const ph = (secret && val) ? '已配置 ' + maskKey(val) + '（留空保持原值）' : '';
-  const shown = secret ? '' : (val||'');
-  return `<div style="margin-bottom:10px"><label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">${label}</label><input type="text" id="${id}" placeholder="${ph}" value="${shown}"></div>`;
+  const ph=(secret&&val)?'已配置 '+maskKey(val)+'（留空保持原值）':'';
+  const shown=secret?'':(val||'');
+  return `<div style="margin-bottom:10px"><label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">${label}</label><input type="text" id="${id}" placeholder="${ph}" value="${esc(shown)}"></div>`;
 }
 
 function openProviderModal(kind){
-  PM_KIND = kind;
-  const title = kind==='llm' ? '语言模型' : (kind==='image'?'生图 provider':'播客 provider');
-  document.getElementById('pmTitle').textContent = '配置 ' + title;
-  const builtins = kind==='llm' ? LLM_BUILTINS : (kind==='image'?IMAGE_BUILTINS:PODCAST_BUILTINS);
-  const customs = customNames();
-  const cur = kind==='llm' ? (CFG.tasks.llm?.provider||'pi') : (CFG.tasks[kind]?.provider || builtins[0].key);
-  let sel = '<label style="font-size:12px;color:var(--muted);display:block;margin-bottom:6px">选用 provider</label><select id="pmProvider" onchange="renderProviderFields()">';
-  for (const b of builtins) sel += `<option value="${b.key}">${b.label}</option>`;
-  for (const c of customs) sel += `<option value="${c}">${c}（自定义）</option>`;
-  sel += '</select>';
-  document.getElementById('pmBody').innerHTML = sel + '<div id="pmFields" style="margin-top:12px"></div>';
-  document.getElementById('pmProvider').value = cur && (builtins.some(b=>b.key===cur)||customs.includes(cur)) ? cur : builtins[0].key;
+  PM_KIND=kind;
+  const title=kind==='llm'?'语言模型':(kind==='image'?'生图 provider':'播客 provider');
+  document.getElementById('pmTitle').textContent='配置 '+title;
+  const builtins=kind==='llm'?LLM_BUILTINS:(kind==='image'?IMAGE_BUILTINS:PODCAST_BUILTINS);
+  const customs=customNames();
+  const cur=kind==='llm'?(CFG.tasks.llm?.provider||'pi'):(CFG.tasks[kind]?.provider||builtins[0].key);
+  let sel='<label style="font-size:12px;color:var(--muted);display:block;margin-bottom:6px">选用 provider</label><select id="pmProvider" onchange="renderProviderFields()">';
+  for(const b of builtins) sel+=`<option value="${b.key}">${b.label}</option>`;
+  for(const c of customs) sel+=`<option value="${c}">${c}（自定义）</option>`;
+  sel+='</select>';
+  document.getElementById('pmBody').innerHTML=sel+'<div id="pmFields" style="margin-top:12px"></div>';
+  document.getElementById('pmProvider').value=cur&&(builtins.some(b=>b.key===cur)||customs.includes(cur))?cur:builtins[0].key;
   renderProviderFields();
   document.getElementById('providerOverlay').classList.add('show');
 }
 function closeProviderModal(){ document.getElementById('providerOverlay').classList.remove('show'); }
 
 function renderProviderFields(){
-  const key = document.getElementById('pmProvider').value;
-  PM_PROVIDER = key;
-  const p = CFG.providers[key];
-  let html = '';
-  if (key === 'pi') {
-    const cur = p?.extra?.model || '';
-    let opts = '<option value="">使用 pi 默认模型</option>';
-    for (const m of CFG_MODELS) opts += `<option value="${m}">${m}</option>`;
-    html = `<div style="margin-bottom:10px"><label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">pi 模型</label><select id="pmModel">${opts}</select></div><div class="hint">由 pi 管理认证；留空用默认模型。</div>`;
-    document.getElementById('pmFields').innerHTML = html;
-    document.getElementById('pmModel').value = cur;
+  const key=document.getElementById('pmProvider').value;
+  PM_PROVIDER=key;
+  const p=CFG.providers[key];
+  let html='';
+  if(key==='pi'){
+    const cur=p?.extra?.model||'';
+    let opts='<option value="">使用 pi 默认模型</option>';
+    for(const m of CFG_MODELS) opts+=`<option value="${m}">${m}</option>`;
+    html=`<div style="margin-bottom:10px"><label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">pi 模型</label><select id="pmModel">${opts}</select></div><div class="hint">由 pi 管理认证；留空用默认模型。</div>`;
+    document.getElementById('pmFields').innerHTML=html;
+    document.getElementById('pmModel').value=cur;
     return;
   }
-  const meta = builtinMeta(key);
-  if (meta) {
-    html += pmField('API Key / Access Token','pmApiKey', p?.api_key||'', true);
-    for (const ek of (meta.extra||[])) {
-      if (ek === 'speaker_count') {
-        const cur = p?.extra?.speaker_count || '2';
-        html += `<div style="margin-bottom:10px"><label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">人数</label><select id="pm_speaker_count"><option value="1">1 人（单人播报）</option><option value="2">2 人（双人对话）</option></select></div>`;
-        setTimeout(()=>{ document.getElementById('pm_speaker_count').value = cur; },0);
-      } else if (ek === 'speaker1' || ek === 'speaker2') {
-        const cur = p?.extra?.[ek] || '';
-        let opts = '<option value="">默认音色</option>';
-        for (const v of PODCAST_VOICES) opts += `<option value="${v.id}">${v.label}</option>`;
-        html += `<div style="margin-bottom:10px"><label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">${ek==='speaker1'?'主持人音色':'嘉宾音色'}</label><select id="pm_${ek}">${opts}</select></div>`;
-        setTimeout(()=>{ document.getElementById('pm_'+ek).value = cur; },0);
+  const meta=builtinMeta(key);
+  if(meta){
+    html+=pmField('API Key / Access Token','pmApiKey',p?.api_key||'',true);
+    for(const ek of (meta.extra||[])){
+      if(ek==='speaker_count'){
+        const cur=p?.extra?.speaker_count||'2';
+        html+=`<div style="margin-bottom:10px"><label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">人数</label><select id="pm_speaker_count"><option value="1">1 人（单人播报）</option><option value="2">2 人（双人对话）</option></select></div>`;
+        setTimeout(()=>{ document.getElementById('pm_speaker_count').value=cur; },0);
+      } else if(ek==='speaker1'||ek==='speaker2'){
+        const cur=p?.extra?.[ek]||'';
+        let opts='<option value="">默认音色</option>';
+        for(const v of PODCAST_VOICES) opts+=`<option value="${v.id}">${v.label}</option>`;
+        html+=`<div style="margin-bottom:10px"><label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">${ek==='speaker1'?'主持人音色':'嘉宾音色'}</label><select id="pm_${ek}">${opts}</select></div>`;
+        setTimeout(()=>{ document.getElementById('pm_'+ek).value=cur; },0);
       } else {
-        html += pmField(ek.toUpperCase(),'pm_'+ek, p?.extra?.[ek]||'', false);
+        html+=pmField(ek.toUpperCase(),'pm_'+ek,p?.extra?.[ek]||'',false);
       }
     }
   } else {
-    html += pmField('BaseURL','pmBase', p?.base_url||'', false);
-    html += pmField('API Key','pmApiKey', p?.api_key||'', true);
-    html += `<div style="margin-bottom:10px"><label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">模型</label><div class="row"><button class="ghost" onclick="fetchModelsTo('pmModel')">获取模型</button><select id="pmModel"></select></div></div>`;
+    html+=pmField('BaseURL','pmBase',p?.base_url||'',false);
+    html+=pmField('API Key','pmApiKey',p?.api_key||'',true);
+    html+=`<div style="margin-bottom:10px"><label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">模型</label><div class="row"><button class="mini" onclick="fetchModelsTo('pmModel')">获取模型</button><select id="pmModel"></select></div></div>`;
     setTimeout(()=>{ const s=document.getElementById('pmModel'); s.innerHTML=`<option value="${p?.model||''}">${p?.model||'— 点击「获取模型」拉取 —'}</option>`; },0);
   }
-  document.getElementById('pmFields').innerHTML = html;
+  document.getElementById('pmFields').innerHTML=html;
 }
 
 function saveProviderModal(){
-  const provider = document.getElementById('pmProvider').value;
-  const p = CFG.providers[provider] || {};
-  const newKey = document.getElementById('pmApiKey')?.value?.trim() || '';
-  const key = newKey || p.api_key || '';
-  if (PM_KIND === 'llm') {
-    CFG.tasks.llm = { provider };
-    if (provider === 'pi') {
-      const model = document.getElementById('pmModel').value || '';
-      const extra = { ...(p.extra||{}) }; if (model) extra.model = model;
-      CFG.providers['pi'] = { type:'builtin', kind:'pi', api_key:'', extra };
+  const provider=document.getElementById('pmProvider').value;
+  const p=CFG.providers[provider]||{};
+  const newKey=document.getElementById('pmApiKey')?.value?.trim()||'';
+  const key=newKey||p.api_key||'';
+  if(PM_KIND==='llm'){
+    CFG.tasks.llm={provider};
+    if(provider==='pi'){
+      const model=document.getElementById('pmModel').value||'';
+      const extra={...(p.extra||{})}; if(model) extra.model=model;
+      CFG.providers['pi']={type:'builtin',kind:'pi',api_key:'',extra};
     } else {
-      const base = document.getElementById('pmBase')?.value?.trim() || p.base_url || '';
-      const model = document.getElementById('pmModel')?.value || p.model || '';
-      CFG.providers[provider] = { type:'openai-compatible', base_url:base, api_key:key, model };
+      const base=document.getElementById('pmBase')?.value?.trim()||p.base_url||'';
+      const model=document.getElementById('pmModel')?.value||p.model||'';
+      CFG.providers[provider]={type:'openai-compatible',base_url:base,api_key:key,model};
     }
   } else {
-    CFG.tasks[PM_KIND] = { provider };
-    const meta = builtinMeta(provider);
-    if (meta) {
-      const extra = { ...(p.extra||{}) };
-      for (const ek of (meta.extra||[])) { const v = document.getElementById('pm_'+ek)?.value?.trim()||''; if (v) extra[ek]=v; }
-      CFG.providers[provider] = { type:'builtin', kind:provider, api_key:key, extra };
+    CFG.tasks[PM_KIND]={provider};
+    const meta=builtinMeta(provider);
+    if(meta){
+      const extra={...(p.extra||{})};
+      for(const ek of (meta.extra||[])){ const v=document.getElementById('pm_'+ek)?.value?.trim()||''; if(v) extra[ek]=v; }
+      CFG.providers[provider]={type:'builtin',kind:provider,api_key:key,extra};
     } else {
-      const base = document.getElementById('pmBase')?.value?.trim() || p.base_url || '';
-      const model = document.getElementById('pmModel')?.value || p.model || '';
-      CFG.providers[provider] = { type:'openai-compatible', base_url:base, api_key:key, model };
+      const base=document.getElementById('pmBase')?.value?.trim()||p.base_url||'';
+      const model=document.getElementById('pmModel')?.value||p.model||'';
+      CFG.providers[provider]={type:'openai-compatible',base_url:base,api_key:key,model};
     }
   }
   closeProviderModal();
   renderConfig();
 }
 
-function toggleCustomForm(){ const el=document.getElementById('customForm'); el.style.display = el.style.display==='none'?'block':'none'; }
+function toggleCustomForm(){ const el=document.getElementById('customForm'); el.style.display=el.style.display==='none'?'block':'none'; }
 function renderCustoms(){
-  const el = document.getElementById('cfgCustoms'); el.innerHTML = '';
-  const customs = customNames();
-  if (!customs.length){ el.innerHTML = '<div class="hint">暂无自定义 provider，点下方「+ 添加」新增</div>'; }
-  for (const n of customs) {
-    const p = CFG.providers[n];
-    const d = document.createElement('div'); d.className='custom-item';
-    d.innerHTML = `<span><b>${n}</b> · ${p.model} · ${p.base_url}</span><button class="del">删除</button>`;
-    d.querySelector('.del').onclick = ()=>{ delete CFG.providers[n]; renderConfig(); };
+  const el=document.getElementById('cfgCustoms'); el.innerHTML='';
+  const customs=customNames();
+  if(!customs.length){ el.innerHTML='<div class="hint">暂无自定义 provider，点下方「+ 添加」新增</div>'; }
+  for(const n of customs){
+    const p=CFG.providers[n];
+    const d=document.createElement('div'); d.className='custom-item';
+    d.innerHTML=`<span><b>${esc(n)}</b> · ${esc(p.model||'')} · ${esc(p.base_url||'')}</span><button class="del">删除</button>`;
+    d.querySelector('.del').onclick=()=>{ delete CFG.providers[n]; renderConfig(); };
     el.appendChild(d);
   }
 }
-async function fetchModelsInto(selId, base, apiKey){
-  const sel = document.getElementById(selId); sel.innerHTML = '<option value="">拉取中…</option>';
-  try {
-    const res = await fetch('/api/fetch-models',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_url:base,api_key:apiKey||''})});
-    const d = await res.json();
-    if (d.ok){ sel.innerHTML='<option value="">— 选择模型 —</option>'; for(const m of d.models) sel.innerHTML+=`<option value="${m}">${m}</option>`; }
-    else sel.innerHTML = `<option value="">拉取失败：${d.error||''}</option>`;
-  } catch(e){ sel.innerHTML = `<option value="">拉取失败：${e.message}</option>`; }
+async function fetchModelsInto(selId,base,apiKey){
+  const sel=document.getElementById(selId); sel.innerHTML='<option value="">拉取中…</option>';
+  try{
+    const res=await fetch('/api/fetch-models',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_url:base,api_key:apiKey||''})});
+    const d=await res.json();
+    if(d.ok){ sel.innerHTML='<option value="">— 选择模型 —</option>'; for(const m of d.models) sel.innerHTML+=`<option value="${m}">${m}</option>`; }
+    else sel.innerHTML=`<option value="">拉取失败：${d.error||''}</option>`;
+  }catch(e){ sel.innerHTML=`<option value="">拉取失败：${e.message}</option>`; }
 }
-async function fetchModelsTo(selId){ await fetchModelsInto(selId, document.getElementById('pmBase')?.value.trim(), document.getElementById('pmApiKey')?.value.trim()); }
-async function fetchCustomModels(){ await fetchModelsInto('cModel', document.getElementById('cBase').value.trim(), document.getElementById('cKey').value.trim()); }
+async function fetchModelsTo(selId){ await fetchModelsInto(selId,document.getElementById('pmBase')?.value.trim(),document.getElementById('pmApiKey')?.value.trim()); }
+async function fetchCustomModels(){ await fetchModelsInto('cModel',document.getElementById('cBase').value.trim(),document.getElementById('cKey').value.trim()); }
 function addCustom(){
-  const name=document.getElementById('cName').value.trim(), base=document.getElementById('cBase').value.trim(), key=document.getElementById('cKey').value.trim(), model=document.getElementById('cModel').value;
+  const name=document.getElementById('cName').value.trim(),base=document.getElementById('cBase').value.trim(),key=document.getElementById('cKey').value.trim(),model=document.getElementById('cModel').value;
   if(!name||!base||!model){ alert('名称 / BaseURL / 模型 必填'); return; }
-  CFG.providers[name] = { type:'openai-compatible', base_url:base, api_key:key, model };
+  CFG.providers[name]={type:'openai-compatible',base_url:base,api_key:key,model};
   ['cName','cBase','cKey'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('cModel').innerHTML='<option value="">— 点击「获取模型」拉取 —</option>';
   document.getElementById('customForm').style.display='none';
   renderConfig();
 }
 async function saveConfig(){
-  const res = await fetch('/api/config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(CFG)});
-  const d = await res.json();
-  if (d.ok){ closeConfig(); setStatus('✓ 配置已保存'); } else alert('保存失败：'+(d.error||'未知'));
+  const res=await fetch('/api/config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(CFG)});
+  const d=await res.json();
+  if(d.ok){ closeConfig(); setStatus('✓ 配置已保存'); } else alert('保存失败：'+(d.error||'未知'));
 }
+
+/* ============================================================
+ * 初始化
+ * ============================================================ */
+renderTimeline();
+enterInputView();
+loadTasks();
 </script>
 </body>
 </html>
