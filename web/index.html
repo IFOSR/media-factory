@@ -336,7 +336,7 @@
 /* ============================================================
  * 状态与常量
  * ============================================================ */
-const state = { currentId:null, es:null, refImages:[], view:'input' };
+const state = { currentId:null, es:null, refImages:[], view:'input', title:null };
 const STEPS = [
   { id:'rewrite', num:'01', name:'改写',   sub:'爆款文案' },
   { id:'image',   num:'02', name:'生图',   sub:'核心意象配图' },
@@ -640,6 +640,7 @@ async function run(step){
     if(!d.ok){ setStatus('出错：'+(d.error||'未知'),true); return; }
     const taskId=d.id;
     state.currentId=taskId;
+    state.title=null;
     updateCurTask(taskId,'运行中');
     // 切到运行视图：清空所有运行面板，按流程预设步骤状态
     enterRunView();
@@ -679,11 +680,13 @@ function handleEvent(ev){
 }
 
 function updateCurTask(id,statusTxt){
-  document.getElementById('curTask').innerHTML=`<span>${esc(id||'')}</span><span class="tstatus">${esc(statusTxt||'')}</span>`;
+  const t=state.title||id||'';
+  document.getElementById('curTask').innerHTML=`<span>${esc(t)}</span><span class="tstatus">${esc(statusTxt||'')}</span>`;
 }
 
 /* 回放（建立 SSE 前 / 历史任务） */
 function replayTask(t){
+  if(t.title) state.title=t.title;
   const steps=t.steps||{};
   for(const s of STEPS){
     const st=steps[s.id]||'pending';
@@ -705,6 +708,7 @@ function replayTask(t){
 function newTask(){
   if(state.es){ state.es.close(); state.es=null; }
   state.currentId=null;
+  state.title=null;
   state.refImages=[];
   renderTimeline();
   renderRefImages();
@@ -727,10 +731,12 @@ async function loadTasks(){
     for(const t of tasks){
       const st=t.status||'unknown';
       const cur=t.current_step?(' · '+stepName(t.current_step)):'';
+      const title=t.title||t.id;
+      const sub= st==='running'?('运行中'+cur) : (t.error?'失败' : (t.created_at?t.created_at.slice(5,16):''));
       const item=document.createElement('div');
       item.className='task-item'+(t.id===state.currentId?' active':'');
       item.innerHTML=`<span class="dot ${st}"></span>
-        <div class="meta"><div class="tid">${esc(t.id)}</div><div class="sub">${st==='running'?'运行中'+cur:(t.error?'失败':'')}</div></div>
+        <div class="meta"><div class="tid" title="${esc(t.id)}">${esc(title)}</div><div class="sub">${esc(sub)}</div></div>
         <button class="tdel" title="删除此任务">×</button>`;
       item.onclick=()=>loadTask(t.id);
       item.querySelector('.tdel').onclick=(e)=>deleteTask(t.id,e);
@@ -770,6 +776,7 @@ async function loadTask(id){
   enterRunView();
   try{
     const t=await (await fetch('/api/tasks/'+id)).json();
+    state.title=t.title||null;
     updateCurTask(id, t.status==='running'?'运行中':(t.status==='done'?'已完成':(t.status==='failed'?'失败':'')));
     replayTask(t);
     // 展开有内容的卡片，折叠空的

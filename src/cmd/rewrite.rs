@@ -31,6 +31,26 @@ fn render_prompt(source: &str, user_prompt: Option<&str>) -> String {
         .replace("{{USER_PROMPT}}", &user_section)
 }
 
+/// 从参考文案提取言简意赅的任务标题：取首个非空行，去 markdown/“标题”前缀，截断到 20 字
+fn extract_title(source: &str) -> String {
+    let line = source.lines().map(|l| l.trim()).find(|l| !l.is_empty()).unwrap_or("");
+    let cleaned = line
+        .trim_start_matches('#')
+        .trim()
+        .trim_start_matches("标题：")
+        .trim_start_matches("标题:")
+        .trim();
+    let count = cleaned.chars().count();
+    let t: String = cleaned.chars().take(20).collect();
+    if t.is_empty() {
+        "未命名任务".to_string()
+    } else if count > 20 {
+        format!("{}…", t)
+    } else {
+        t
+    }
+}
+
 /// 核心流程（可注入 llm 以便测试）。返回任务 id。
 pub async fn run_with(
     output_root: &Path,
@@ -44,6 +64,7 @@ pub async fn run_with(
     std::fs::create_dir_all(&dir)?;
 
     std::fs::write(dir.join("input.md"), source)?;
+    events.set_title(&extract_title(source));
     events.log(Step::Rewrite, "读取参考文案与改写要求");
 
     let prompt = render_prompt(source, user_prompt);
@@ -130,5 +151,16 @@ mod tests {
         let p = render_prompt("测试内容", Some("面向小红书，语气活泼"));
         assert!(p.contains("面向小红书，语气活泼"));
         assert!(p.contains("用户额外要求"));
+    }
+
+    #[test]
+    fn extract_title_from_source() {
+        assert_eq!(extract_title("ChatGPT 周活破 10 亿\n\n正文…"), "ChatGPT 周活破 10 亿");
+        assert_eq!(extract_title("\n\n  # 标题：我的第一篇文章\n正文"), "我的第一篇文章");
+        assert_eq!(extract_title(""), "未命名任务");
+        // 超长截断 + 省略号
+        let long = extract_title("这是一段非常非常非常非常非常非常非常非常长的开头内容");
+        assert!(long.ends_with('…'));
+        assert_eq!(long.chars().count(), 21);
     }
 }

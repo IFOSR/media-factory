@@ -78,6 +78,9 @@ pub struct TaskMeta {
     pub updated_at: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// 任务标题（从参考文案自动提取，言简意赅）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
 }
 
 impl TaskMeta {
@@ -95,6 +98,7 @@ impl TaskMeta {
             created_at: now.clone(),
             updated_at: now,
             error: None,
+            title: None,
         }
     }
 
@@ -207,6 +211,13 @@ impl TaskEvents {
     pub fn init(&self) {
         self.save_meta(&TaskMeta::new(&self.task_id));
         self.emit(Event::Task { status: "running".into(), error: None });
+    }
+
+    /// 设置任务标题（从参考文案提取）
+    pub fn set_title(&self, title: &str) {
+        let mut m = self.load_meta();
+        m.title = Some(title.to_string());
+        self.save_meta(&m);
     }
 
     pub fn step_running(&self, step: Step) {
