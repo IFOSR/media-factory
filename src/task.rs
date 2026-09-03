@@ -231,6 +231,7 @@ impl TaskEvents {
         let _ = err;
     }
 
+    #[allow(dead_code)] // 预留：未来接 LLM token 级真流式
     pub fn chunk(&self, step: Step, delta: &str) {
         self.emit(Event::Chunk { step: step.as_str().into(), delta: delta.into() });
     }

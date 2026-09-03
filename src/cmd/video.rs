@@ -18,10 +18,17 @@ pub fn run_with(dir: &Path, events: &TaskEvents) -> anyhow::Result<()> {
     );
 
     events.step_running(Step::Video);
+    events.log(Step::Video, "校验配图与播客音频");
     let out = dir.join("video.mp4");
     let srt = dir.join("subtitle.srt");
     let subtitle = if srt.exists() { Some(srt.as_path()) } else { None };
+    if subtitle.is_some() {
+        events.log(Step::Video, "ffmpeg 合成视频（图片+音频+字幕）");
+    } else {
+        events.log(Step::Video, "ffmpeg 合成视频（图片+音频）");
+    }
     ffmpeg::make_video(&image, &audio, subtitle, &out)?;
+    events.log(Step::Video, "已生成成品视频 video.mp4");
     events.artifact(Step::Video, "video.mp4");
     events.step_done(Step::Video);
     if subtitle.is_some() {

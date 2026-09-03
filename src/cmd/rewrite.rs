@@ -44,13 +44,14 @@ pub async fn run_with(
     std::fs::create_dir_all(&dir)?;
 
     std::fs::write(dir.join("input.md"), source)?;
+    events.log(Step::Rewrite, "读取参考文案与改写要求");
 
     let prompt = render_prompt(source, user_prompt);
     events.step_running(Step::Rewrite);
+    events.log(Step::Rewrite, "调用语言模型生成改写稿");
 
     let out = llm.complete(&prompt).await?;
-    // 前端会以打字机方式逐字渲染这段文本，这里作为一次性 chunk 发出
-    events.chunk(Step::Rewrite, &out);
+    events.log(Step::Rewrite, &format!("已生成改写稿（{} 字）", out.chars().count()));
 
     std::fs::write(dir.join("rewritten.md"), &out)?;
     events.artifact(Step::Rewrite, "rewritten.md");

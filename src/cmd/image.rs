@@ -56,6 +56,7 @@ pub async fn run_with(
 
     let text = std::fs::read_to_string(&rewritten_path)?;
     events.step_running(Step::Image);
+    events.log(Step::Image, "读取改写文案，提炼图像 prompt");
     let img_prompt = distill_prompt(llm, &text, user_prompt).await?;
     println!("图像 prompt: {}", img_prompt);
 
@@ -63,6 +64,13 @@ pub async fn run_with(
         eprintln!("⚠️  当前生图 provider 不支持参考图，已忽略参考图降级为纯文本生图");
     }
     let reference = if provider.supports_reference() { reference } else { vec![] };
+
+    let size_label = match size {
+        crate::provider::ImageSize::Square => "方形 1:1",
+        crate::provider::ImageSize::Portrait => "竖屏 9:16",
+        crate::provider::ImageSize::Landscape => "横屏 16:9",
+    };
+    events.log(Step::Image, &format!("调用生图服务（{}，参考图 {} 张）", size_label, reference.len()));
 
     let bytes = provider
         .generate(&ImageRequest {
@@ -77,12 +85,14 @@ pub async fn run_with(
 
     // 勾选免责声明时：生成图片后把声明叠加到图片底部（等同字幕叠加逻辑，不污染提示词）
     if disclaimer {
+        events.log(Step::Image, "在图片右上角叠加免责声明");
         let tmp = dir.join("image_disclaimer.png");
         crate::ffmpeg::overlay_disclaimer(&out, DISCLAIMER_TEXT, &tmp)?;
         std::fs::rename(&tmp, &out)?;
         println!("✓ 已叠加免责声明");
     }
 
+    events.log(Step::Image, "已保存配图 image.png");
     events.artifact(Step::Image, "image.png");
     events.step_done(Step::Image);
     println!("✓ 生图完成: {}", out.display());

@@ -32,6 +32,7 @@ pub async fn run_with(
     let text = std::fs::read_to_string(&rewritten_path)?;
     let script_path = dir.join("script.md");
     events.step_running(Step::Podcast);
+    events.log(Step::Podcast, "读取改写文案，整理播客输入");
 
     match backend {
         PodcastBackend::Volc(v) => run_volc(v, dir, &script_path, &text, force_script, user_prompt, events).await,
@@ -59,6 +60,7 @@ async fn run_volc(
     let input_text = with_style(text, user_prompt);
     // 模式 B：生成脚本供人工修改
     if force_script && !script_path.exists() {
+        events.log(Step::Podcast, "调用播客服务生成对话脚本");
         let res = v
             .generate(&PodcastRequest {
                 input_text: Some(input_text),
@@ -70,6 +72,7 @@ async fn run_volc(
             anyhow::bail!("预期返回脚本，但得到了音频");
         };
         std::fs::write(script_path, &s)?;
+        events.log(Step::Podcast, "已生成对话脚本 script.md");
         events.artifact(Step::Podcast, "script.md");
         events.step_done(Step::Podcast);
         println!("✓ 已生成脚本: {}，请人工修改后重跑 `media-factory podcast --id {}`", script_path.display(), dir.file_name().unwrap().to_string_lossy());
@@ -84,6 +87,7 @@ async fn run_volc(
         let sa = speakers.first().cloned().unwrap_or_default();
         let sb = speakers.get(1).cloned().unwrap_or_else(|| sa.clone());
         let nlp_texts = podcast::to_nlp_texts(&turns, &sa, &sb);
+        events.log(Step::Podcast, "按脚本调用播客服务合成双人对话音频");
         let res = v
             .generate(&PodcastRequest {
                 input_text: None,
@@ -99,14 +103,17 @@ async fn run_volc(
         if !subtitles.is_empty() {
             let srt = dir.join("subtitle.srt");
             podcast::write_srt(&srt, &subtitles)?;
+            events.log(Step::Podcast, "捕获字幕时间轴 subtitle.srt");
             events.artifact(Step::Podcast, "subtitle.srt");
             println!("✓ 字幕已生成: {}", srt.display());
         }
+        events.log(Step::Podcast, "已合成播客音频 podcast.mp3");
         events.step_done(Step::Podcast);
         return Ok(());
     }
 
     // 模式 A（默认）：文本 → 直接合成
+    events.log(Step::Podcast, "调用播客服务直接合成音频");
     let res = v
         .generate(&PodcastRequest {
             input_text: Some(input_text),
@@ -122,9 +129,11 @@ async fn run_volc(
     if !subtitles.is_empty() {
         let srt = dir.join("subtitle.srt");
         podcast::write_srt(&srt, &subtitles)?;
+        events.log(Step::Podcast, "捕获字幕时间轴 subtitle.srt");
         events.artifact(Step::Podcast, "subtitle.srt");
         println!("✓ 字幕已生成: {}", srt.display());
     }
+    events.log(Step::Podcast, "已合成播客音频 podcast.mp3");
     events.step_done(Step::Podcast);
     Ok(())
 }
@@ -151,6 +160,7 @@ async fn run_tts(
         let prompt = script_prompt_template()
             .replace("{{TEXT}}", text)
             .replace("{{USER_PROMPT}}", &user_section);
+        events.log(Step::Podcast, "调用语言模型生成对话脚本");
         let s = llm.complete(&prompt).await?;
         std::fs::write(script_path, &s)?;
         s
@@ -172,7 +182,9 @@ async fn run_tts(
     }
 
     let out = dir.join("podcast.mp3");
+    events.log(Step::Podcast, &format!("逐段合成并拼接 {} 段音频", segs.len()));
     ffmpeg::concat_mp3(&segs, &out)?;
+    events.log(Step::Podcast, "已合成播客音频 podcast.mp3");
     events.artifact(Step::Podcast, "podcast.mp3");
     events.artifact(Step::Podcast, "script.md");
     events.step_done(Step::Podcast);
