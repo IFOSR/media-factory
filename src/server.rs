@@ -411,7 +411,14 @@ async fn task_events(AxPath(id): AxPath<String>) -> Response {
                     }
                 }
             });
-            Sse::new(stream).into_response()
+            // keep_alive：每 15s 发一次心跳注释，防止空闲连接被中间层断开重连
+            Sse::new(stream)
+                .keep_alive(
+                    axum::response::sse::KeepAlive::new()
+                        .interval(std::time::Duration::from_secs(15))
+                        .text("ping"),
+                )
+                .into_response()
         }
         None => (StatusCode::NOT_FOUND, "任务不存在或已结束").into_response(),
     }
