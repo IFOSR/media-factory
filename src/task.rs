@@ -124,6 +124,8 @@ impl TaskMeta {
 #[allow(dead_code)]
 pub enum Event {
     Step { step: String, status: String },
+    /// 思考链路动作日志（流式展示后台处理细节）
+    Log { step: String, text: String },
     Chunk { step: String, delta: String },
     Artifact { step: String, name: String, url: String },
     Progress { step: String, percent: f64 },
@@ -233,6 +235,12 @@ impl TaskEvents {
         self.emit(Event::Chunk { step: step.as_str().into(), delta: delta.into() });
     }
 
+    /// 发送思考链路动作日志；同时 println（CLI 终端与 web 的 serve.log 均可见）
+    pub fn log(&self, step: Step, text: &str) {
+        println!("  · {}", text);
+        self.emit(Event::Log { step: step.as_str().into(), text: text.into() });
+    }
+
     pub fn artifact(&self, step: Step, name: &str) {
         let url = format!("/api/files/{}/{}", self.task_id, name);
         self.emit(Event::Artifact { step: step.as_str().into(), name: name.into(), url });
@@ -255,5 +263,40 @@ impl TaskEvents {
         m.finish(true, Some(err.to_string()));
         self.save_meta(&m);
         self.emit(Event::Task { status: "failed".into(), error: Some(err.to_string()) });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn log_event_serializes() {
+        let ev = Event::Log { step: "rewrite".into(), text: "读取参考文案".into() };
+        let s = serde_json::to_string(&ev).unwrap();
+        assert_eq!(s, r#"{"type":"log","step":"rewrite","text":"读取参考文案"}"#);
+    }
+
+    #[test]
+    fn log_local_mode_no_panic() {
+        let dir = tempfile::tempdir().unwrap();
+        let ev = TaskEvents::local(dir.path(), "t1");
+        ev.log(Step::Rewrite, "测试");
+    }
+
+    #[test]
+    fn log_streaming_mode_broadcasts() {
+        let dir = tempfile::tempdir().unwrap();
+        let ev = TaskEvents::streaming(dir.path(), "t2");
+        let mut rx = subscribe("t2").unwrap();
+        ev.log(Step::Image, "提炼图像 prompt");
+        let got = rx.try_recv().unwrap();
+        match got {
+            Event::Log { step, text } => {
+                assert_eq!(step, "image");
+                assert_eq!(text, "提炼图像 prompt");
+            }
+            _ => panic!("expected Log event"),
+        }
     }
 }
