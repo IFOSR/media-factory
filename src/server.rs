@@ -359,6 +359,34 @@ async fn list_tasks() -> Response {
     Json(json!({"ok": true, "tasks": tasks})).into_response()
 }
 
+/// 删除单个任务（移除产物目录 + SSE channel）
+async fn delete_task(AxPath(id): AxPath<String>) -> Response {
+    if id.contains("..") || id.contains('/') || id.contains('\\') {
+        return (StatusCode::BAD_REQUEST, Json(json!({"ok": false, "error": "非法任务 id"}))).into_response();
+    }
+    let dir = Path::new(OUTPUT_ROOT).join(&id);
+    let _ = std::fs::remove_dir_all(&dir); // 目录不存在也忽略
+    crate::task::drop_channel(&id);
+    Json(json!({"ok": true})).into_response()
+}
+
+/// 清空所有历史任务（保留 _ 开头的系统目录）
+async fn clear_tasks() -> Response {
+    if let Ok(entries) = std::fs::read_dir(OUTPUT_ROOT) {
+        for e in entries.flatten() {
+            if e.path().is_dir() {
+                let id = e.file_name().to_string_lossy().to_string();
+                if id.starts_with('_') {
+                    continue;
+                }
+                let _ = std::fs::remove_dir_all(e.path());
+                crate::task::drop_channel(&id);
+            }
+        }
+    }
+    Json(json!({"ok": true})).into_response()
+}
+
 async fn task_info(AxPath(id): AxPath<String>) -> Response {
     let mut m = task_meta_json(&id);
     if let Some(obj) = m.as_object_mut() {
@@ -555,8 +583,8 @@ pub async fn run(port: u16) -> anyhow::Result<()> {
         .route("/api/image", post(image))
         .route("/api/podcast", post(podcast))
         .route("/api/video", post(video))
-        .route("/api/tasks", get(list_tasks))
-        .route("/api/tasks/:id", get(task_info))
+        .route("/api/tasks", get(list_tasks).delete(clear_tasks))
+        .route("/api/tasks/:id", get(task_info).delete(delete_task))
         .route("/api/tasks/:id/events", get(task_events))
         .route("/api/files/:id/:name", get(download).put(save_file))
         .route("/api/upload", post(upload))
