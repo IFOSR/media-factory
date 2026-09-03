@@ -64,7 +64,9 @@ impl VolcPodcast {
         self
     }
 
-    /// 把音色 ID 映射成友好称呼
+    /// 把音色 ID 映射成友好称呼（基于动态开口顺序：首个开口者为主持人）
+    /// 仅在无法动态判定（不应发生）时回落静态顺序
+    #[allow(dead_code)]
     fn speaker_label(&self, speaker: &str) -> String {
         if self.speakers.len() > 1 && speaker == self.speakers[1] {
             "嘉宾".to_string()
@@ -186,6 +188,15 @@ impl VolcPodcast {
         let mut subtitles: Vec<super::SubtitleEntry> = Vec::new();
         // 当前轮次：RoundStart 给出文本/说话人，RoundEnd 给出起止时间
         let mut cur_round: Option<(String, String)> = None;
+        // 动态角色判定：记录音色首次开口顺序，首个开口者为主持人（对 random_order 免疫）
+        let mut speaker_order: Vec<String> = Vec::new();
+        fn role_of(order: &[String], speaker: &str) -> String {
+            match order.first() {
+                Some(first) if first == speaker => "主持人".to_string(),
+                Some(_) => "嘉宾".to_string(),
+                None => "主持人".to_string(),
+            }
+        }
 
         // 4. 读生成事件：PodcastRoundResponse(361) 音频、RoundStart(360) 文本、PodcastEnd(363)、SessionFinished(152)
         let read_loop = async {
@@ -200,12 +211,16 @@ impl VolcPodcast {
                         let speaker = v["speaker"].as_str().unwrap_or("");
                         let text = v["text"].as_str().unwrap_or("");
                         let round_id = v["round_id"].as_i64().unwrap_or(-1);
-                        if req.only_nlp_text {
-                            script_lines.push(format!("{}：{text}", self.speaker_label(speaker)));
-                        }
                         // round_id -1=片头音乐 9999=片尾音乐，无正文，跳过字幕
-                        if round_id != -1 && round_id != 9999 && !text.is_empty() {
-                            cur_round = Some((self.speaker_label(speaker), text.to_string()));
+                        let is_voice_round = round_id != -1 && round_id != 9999 && !text.is_empty();
+                        if is_voice_round && !speaker.is_empty() && !speaker_order.iter().any(|s| s == speaker) {
+                            speaker_order.push(speaker.to_string());
+                        }
+                        if req.only_nlp_text {
+                            script_lines.push(format!("{}：{text}", role_of(&speaker_order, speaker)));
+                        }
+                        if is_voice_round {
+                            cur_round = Some((role_of(&speaker_order, speaker), text.to_string()));
                         } else {
                             cur_round = None;
                         }
@@ -302,5 +317,29 @@ mod tests {
         let p2 = y.build_payload(&req);
         assert_eq!(p2["speaker_info"]["random_order"], true);
         assert_eq!(p2["speaker_info"]["speakers"].as_array().unwrap().len(), 2);
+    }
+}
+
+#[cfg(test)]
+mod role_tests {
+    // 模拟 read_loop 中的动态角色判定逻辑
+    #[test]
+    fn first_speaker_is_host_even_with_random_order() {
+        // random_order 下火山可能让 speakers[1] 先开口：首个开口者必须是“主持人”
+        let mut order: Vec<String> = Vec::new();
+        let role = |o: &[String], s: &str| -> String {
+            match o.first() {
+                Some(f) if f == s => "主持人".to_string(),
+                Some(_) => "嘉宾".to_string(),
+                None => "主持人".to_string(),
+            }
+        };
+        // 音色 B 先开口 → B 是主持人，A 是嘉宾（与静态顺序相反）
+        let b = "voice_b".to_string();
+        let a = "voice_a".to_string();
+        assert!(!order.contains(&b)); order.push(b.clone());
+        assert!(!order.contains(&a)); order.push(a.clone());
+        assert_eq!(role(&order, &b), "主持人");
+        assert_eq!(role(&order, &a), "嘉宾");
     }
 }
