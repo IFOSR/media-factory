@@ -7,18 +7,50 @@
 3. **播客** — 基于改写文案生成双人对话播客音频
 4. **视频** — 配图 + 播客音频合成视频（图片贯穿全片）
 
-## 安装与依赖
+## 安装
+
+### 方式一：一键安装（推荐）
+
+默认优先下载 Release 预编译包，不可用（如尚未发布或网络不通）时自动回退源码编译：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/IFOSR/media-factory/main/install.sh | bash
+```
+
+也可克隆后执行（支持参数）：
+
+```bash
+git clone https://github.com/IFOSR/media-factory.git
+cd media-factory
+./install.sh                # Release 优先，自动回退源码
+./install.sh --release      # 仅安装 Release 预编译包
+./install.sh --source       # 仅源码编译（缺失 Rust 时自动经 rustup 安装）
+./install.sh --bin-dir /usr/local/bin   # 自定义安装目录（默认 ~/.media-factory/bin）
+```
+
+### 方式二：手动源码安装
 
 ```bash
 # 1. Rust 工具链（https://rustup.rs）
-# 2. pi（语言模型层，负责改写/图像 prompt/播客脚本）
+# 2. pi（默认语言模型层；也可在配置向导中改用自定义 OpenAI 兼容 provider）
 npm install -g @earendil-works/pi-coding-agent
-# 3. ffmpeg（音频拼接与视频合成）
+# 3. ffmpeg（播客拼接与视频合成）
 brew install ffmpeg          # macOS
 # apt install ffmpeg          # Debian/Ubuntu
 
 cargo build --release
+# 二进制位于 target/release/media-factory
 ```
+
+### 运行依赖说明
+
+| 依赖 | 必需性 | 安装 |
+|------|--------|------|
+| ffmpeg | 播客 / 视频步骤必需 | `brew install ffmpeg` / `apt install ffmpeg` |
+| pi | 默认语言模型（改写/提炼 prompt/脚本）；可换自定义 provider | `npm install -g @earendil-works/pi-coding-agent` |
+| Rust | 仅源码编译需要 | https://rustup.rs |
+
+安装脚本会自动检测并提示缺失项（不阻断安装）。
 
 ## 快速开始
 

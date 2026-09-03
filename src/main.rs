@@ -13,7 +13,7 @@ mod tts;
 mod wizard;
 
 #[derive(Parser)]
-#[command(name = "media-factory", about = "自媒体内容工厂：改写 → 生图 → 播客 → 视频")]
+#[command(name = "media-factory", version, about = "自媒体内容工厂：改写 → 生图 → 播客 → 视频")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,

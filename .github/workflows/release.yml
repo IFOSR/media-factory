@@ -1,0 +1,46 @@
+name: Release
+
+# 打 tag（如 v0.1.0）自动构建三平台预编译包并发布 GitHub Release
+# 触发方式: git tag v0.1.0 && git push origin v0.1.0
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest,  target: aarch64-apple-darwin }
+          - { os: macos-latest,  target: x86_64-apple-darwin }
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          target: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Pack
+        run: |
+          cd "target/${{ matrix.target }}/release"
+          strip media-factory || true
+          tar czf "../../../media-factory-${{ matrix.target }}.tar.gz" media-factory
+
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: media-factory-*.tar.gz
+          generate_release_notes: true
