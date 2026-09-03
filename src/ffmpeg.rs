@@ -26,12 +26,22 @@ fn ffprobe_bin() -> PathBuf {
     }
 }
 
-/// 探测可用的中文字体（用于 drawtext 叠加免责声明）
+/// 探测可用的中文字体（用于 drawtext 叠加免责声明；覆盖 macOS / Linux / Windows）
 fn find_cjk_font() -> Option<PathBuf> {
+    #[cfg(target_os = "windows")]
     const CANDIDATES: &[&str] = &[
+        "C:\\Windows\\Fonts\\msyh.ttc",      // 微软雅黑
+        "C:\\Windows\\Fonts\\msyhbd.ttc",   // 微软雅黑粗体
+        "C:\\Windows\\Fonts\\simhei.ttf",   // 黑体
+        "C:\\Windows\\Fonts\\msjh.ttc",     // 微软正黑（繁体）
+    ];
+    #[cfg(not(target_os = "windows"))]
+    const CANDIDATES: &[&str] = &[
+        // macOS
         "/System/Library/Fonts/PingFang.ttc",
         "/System/Library/Fonts/Hiragino Sans GB.ttc",
         "/System/Library/Fonts/STHeiti Light.ttc",
+        // Linux
         "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
         "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
         "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
@@ -129,6 +139,17 @@ pub fn concat_mp3(seg_files: &[impl AsRef<Path>], out: &Path) -> anyhow::Result<
 }
 
 /// 静态图 + 音频合成视频（图片贯穿全片，时长 = 音频时长）；可选烧入字幕
+/// 字幕烧录字体名：按平台选择系统内置中文字体（避免 libass 找不到指定字体时随意 fallback）
+fn subtitle_font_name() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "Hiragino Sans GB"
+    } else if cfg!(target_os = "windows") {
+        "Microsoft YaHei"
+    } else {
+        "Noto Sans CJK SC"
+    }
+}
+
 pub fn make_video(image: &Path, audio: &Path, subtitle: Option<&Path>, out: &Path) -> anyhow::Result<()> {
     let mut cmd = Command::new(ffmpeg_bin());
     cmd.args(["-y", "-loop", "1", "-i"])
@@ -145,7 +166,8 @@ pub fn make_video(image: &Path, audio: &Path, subtitle: Option<&Path>, out: &Pat
         let p = srt.to_string_lossy().replace('\\', "/").replace(':', "\\:");
         // 字幕：白字 + 黑描边（无底框），底部居中，单行，智能换行不拆单词
         let vf = format!(
-            "subtitles='{p}':force_style='FontName=Hiragino Sans GB,FontSize=13,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2,Shadow=0,BorderStyle=1,Alignment=2,MarginV=40,WrapStyle=0'"
+            "subtitles='{p}':force_style='FontName={},FontSize=13,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2,Shadow=0,BorderStyle=1,Alignment=2,MarginV=40,WrapStyle=0'",
+            subtitle_font_name()
         );
         cmd.args(["-vf", &vf]);
     }

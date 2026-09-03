@@ -45,8 +45,19 @@ OS_RAW="$(uname -s)"
 ARCH_RAW="$(uname -m)"
 case "$OS_RAW" in
   Darwin) TARGET_OS="apple-darwin" ;;
-  Linux)  TARGET_OS="unknown-linux-gnu" ;;
-  *)      die "不支持的系统: $OS_RAW（当前支持 macOS / Linux）" ;;
+  Linux)  TARGET_OS="unknown-linux-gnu" ;;   # WSL 也走这里，用 Linux 包
+  MINGW*|MSYS*|CYGWIN*)
+    cat <<'EOF'
+ ✗ 检测到 Windows（Git Bash）。请任选其一：
+   1) 下载预编译包解压运行 media-factory.exe：
+      https://github.com/IFOSR/media-factory/releases/latest
+      （文件：media-factory-x86_64-pc-windows-msvc.tar.gz）
+   2) 源码安装：安装 Rust（https://rustup.rs）后，在项目目录执行
+      cargo build --release
+   3) 在 WSL（Ubuntu）中运行本脚本，按 Linux 方式安装
+EOF
+    exit 1 ;;
+  *)      die "不支持的系统: $OS_RAW（当前支持 macOS / Linux / WSL）" ;;
 esac
 case "$ARCH_RAW" in
   arm64|aarch64) TARGET_ARCH="aarch64" ;;

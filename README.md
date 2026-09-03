@@ -46,11 +46,22 @@ cargo build --release
 
 | 依赖 | 必需性 | 安装 |
 |------|--------|------|
-| ffmpeg | 播客 / 视频步骤必需 | `brew install ffmpeg` / `apt install ffmpeg` |
+| ffmpeg | 播客 / 视频步骤必需 | `brew install ffmpeg` / `apt install ffmpeg` / `winget install ffmpeg` |
 | pi | 默认语言模型（改写/提炼 prompt/脚本）；可换自定义 provider | `npm install -g @earendil-works/pi-coding-agent` |
 | Rust | 仅源码编译需要 | https://rustup.rs |
 
 安装脚本会自动检测并提示缺失项（不阻断安装）。
+
+### 平台支持
+
+| 平台 | 预编译包 | 说明 |
+|------|-----------|------|
+| macOS（Apple Silicon） | ✅ media-factory-aarch64-apple-darwin | 完整支持 |
+| macOS（Intel） | ✅ media-factory-x86_64-apple-darwin | 完整支持（开发验证环境） |
+| Linux x64（含 WSL） | ✅ media-factory-x86_64-unknown-linux-gnu | 需 ffmpeg + 中文字体（如 fonts-noto-cjk） |
+| Windows x64 | ✅ media-factory-x86_64-pc-windows-msvc | 下载解压后运行 `media-factory.exe`；Web 服务直接 `serve`，`serve.sh` 为 bash 脚本不适用 |
+
+Windows 提示：安装脚本（bash）在 Git Bash 下会给出手动指引；也可在 WSL 中按 Linux 方式一键安装。
 
 ## 快速开始
 

@@ -15,9 +15,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: macos-latest,  target: aarch64-apple-darwin }
-          - { os: macos-latest,  target: x86_64-apple-darwin }
-          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu }
+          - { os: macos-latest,    target: aarch64-apple-darwin }
+          - { os: macos-latest,    target: x86_64-apple-darwin }
+          - { os: ubuntu-latest,   target: x86_64-unknown-linux-gnu }
+          - { os: windows-latest,  target: x86_64-pc-windows-msvc }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -34,10 +35,13 @@ jobs:
         run: cargo build --release --target ${{ matrix.target }}
 
       - name: Pack
+        shell: bash
         run: |
           cd "target/${{ matrix.target }}/release"
-          strip media-factory || true
-          tar czf "../../../media-factory-${{ matrix.target }}.tar.gz" media-factory
+          BIN="media-factory"
+          if [[ "${{ matrix.target }}" == *windows* ]]; then BIN="media-factory.exe"; fi
+          strip "$BIN" || true
+          tar czf "../../../media-factory-${{ matrix.target }}.tar.gz" "$BIN"
 
       - name: Upload to Release
         uses: softprops/action-gh-release@v2
