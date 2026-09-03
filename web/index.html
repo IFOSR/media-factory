@@ -412,7 +412,7 @@ function stepInputPane(step){
       <label class="chk">主持人 <select id="speaker1">${voiceOptions()}</select></label>
       <label class="chk" id="speaker2Wrap">嘉宾 <select id="speaker2">${voiceOptions()}</select></label>
     </div>
-    <div class="hint">留空音色则用配置默认；仅火山播客 provider 生效。</div>`;
+    <div class="hint">留空音色则用配置默认；火山播客仅支持双人对话，单人播报需改用 TTS provider。</div>`;
   if(step==='video') return `
     <div class="hint" style="padding:4px 0">视频步骤自动使用上方配图与播客音频合成（含字幕），无需额外输入。待播客与配图就绪后执行。</div>`;
   return '';

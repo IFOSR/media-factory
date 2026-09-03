@@ -58,6 +58,12 @@ async fn run_volc(
     events: &TaskEvents,
 ) -> anyhow::Result<()> {
     let input_text = with_style(text, user_prompt);
+    // 火山语音播客大模型仅支持双人对话（speakers 至少 2 个），单人不被 API 接受
+    if v.speakers().len() < 2 {
+        anyhow::bail!(
+            "火山播客 API 仅支持双人对话播客（当前仅 1 个音色）。\n单人播报请改用 TTS provider（openai-tts / gemini-tts / volc-tts），或在配置中选择 2 人模式"
+        );
+    }
     // 模式 B：生成脚本供人工修改
     if force_script && !script_path.exists() {
         events.log(Step::Podcast, "调用播客服务生成对话脚本");

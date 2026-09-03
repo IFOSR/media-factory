@@ -121,6 +121,16 @@ pub enum PodcastBackend {
     Tts(Box<dyn tts::TtsProvider>),
 }
 
+impl PodcastBackend {
+    /// 任务级人数/音色覆盖（TTS 后端忽略，使用自身 default_voices）
+    pub fn with_speaker_config(self, count: usize, s1: Option<String>, s2: Option<String>) -> Self {
+        match self {
+            PodcastBackend::Volc(v) => PodcastBackend::Volc(v.with_speaker_config(count, s1, s2)),
+            other => other,
+        }
+    }
+}
+
 const DEFAULT_SPEAKER_A: &str = "zh_female_mizaitongxue_v2_saturn_bigtts";
 const DEFAULT_SPEAKER_B: &str = "zh_male_dayixiansheng_v2_saturn_bigtts";
 

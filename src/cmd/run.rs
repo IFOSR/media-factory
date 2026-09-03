@@ -66,7 +66,7 @@ pub async fn run_with_config(
     reference: Vec<PathBuf>,
     prompts: &Prompts<'_>,
     events: &TaskEvents,
-    podcast_speakers: Option<Vec<String>>,
+    podcast_speakers: Option<(usize, Option<String>, Option<String>)>,
     disclaimer: bool,
     size: provider::ImageSize,
 ) -> anyhow::Result<String> {
@@ -103,10 +103,8 @@ pub async fn run_with_config(
         }
     };
     let backend = match (backend, podcast_speakers) {
-        (podcast_backend::PodcastBackend::Volc(v), Some(sp)) => {
-            podcast_backend::PodcastBackend::Volc(v.with_speakers(sp))
-        }
-        (b, _) => b,
+        (b, Some((count, s1, s2))) => b.with_speaker_config(count, s1, s2),
+        (b, None) => b,
     };
     if let Err(e) = podcast::run_with(&dir, llm, &backend, false, prompts.podcast, events).await {
         events.step_failed(Step::Podcast, &e.to_string());

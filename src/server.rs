@@ -157,36 +157,19 @@ fn dir_id(dir: &Path) -> String {
 }
 
 /// 从任务级 speaker 参数构造发音人列表；未提供时返回 None（用配置默认）
-fn build_speakers(count: Option<u32>, s1: Option<String>, s2: Option<String>) -> Option<Vec<String>> {
+/// 任务级播客人数/音色覆盖（None = 未提供任何覆盖；音色留空则由后端回落配置默认）
+fn build_speakers(count: Option<u32>, s1: Option<String>, s2: Option<String>) -> Option<(usize, Option<String>, Option<String>)> {
     if count.is_none() && s1.is_none() && s2.is_none() {
         return None;
     }
-    let n = count.unwrap_or(2).clamp(1, 2) as usize;
-    let mut v = Vec::new();
-    if n >= 1 {
-        if let Some(a) = s1.filter(|s| !s.is_empty()) {
-            v.push(a);
-        }
-    }
-    if n >= 2 {
-        if let Some(b) = s2.filter(|s| !s.is_empty()) {
-            v.push(b);
-        }
-    }
-    if v.is_empty() {
-        None
-    } else {
-        Some(v)
-    }
+    Some((count.unwrap_or(2).clamp(1, 2) as usize, s1, s2))
 }
 
 /// 给播客 backend 应用任务级发音人覆盖
-fn apply_speakers(backend: podcast_backend::PodcastBackend, speakers: Option<Vec<String>>) -> podcast_backend::PodcastBackend {
-    match (backend, speakers) {
-        (podcast_backend::PodcastBackend::Volc(v), Some(sp)) => {
-            podcast_backend::PodcastBackend::Volc(v.with_speakers(sp))
-        }
-        (b, _) => b,
+fn apply_speakers(backend: podcast_backend::PodcastBackend, over: Option<(usize, Option<String>, Option<String>)>) -> podcast_backend::PodcastBackend {
+    match over {
+        Some((count, s1, s2)) => backend.with_speaker_config(count, s1, s2),
+        None => backend,
     }
 }
 
@@ -254,7 +237,10 @@ async fn rewrite(State(state): State<AppState>, Json(req): Json<RewriteReq>) -> 
         let r = cmd::rewrite::run_with(Path::new(OUTPUT_ROOT), &req.text, &id2, llm.as_ref(), req.prompt.as_deref(), &events).await;
         match r {
             Ok(_) => events.task_done(),
-            Err(e) => events.task_error(&e.to_string()),
+            Err(e) => {
+                events.step_failed(crate::task::Step::Rewrite, &e.to_string());
+                events.task_error(&e.to_string());
+            }
         }
     });
     Json(json!({"ok": true, "id": id})).into_response()
@@ -282,7 +268,10 @@ async fn image(State(state): State<AppState>, Json(req): Json<ImageReq>) -> Resp
         let r = cmd::image::run_with(&dir, req.ref_images.into_iter().map(PathBuf::from).collect(), llm.as_ref(), provider.as_ref(), req.prompt.as_deref(), &events, req.disclaimer, size).await;
         match r {
             Ok(_) => events.task_done(),
-            Err(e) => events.task_error(&e.to_string()),
+            Err(e) => {
+                events.step_failed(crate::task::Step::Image, &e.to_string());
+                events.task_error(&e.to_string());
+            }
         }
     });
     Json(json!({"ok": true, "id": id})).into_response()
@@ -311,7 +300,10 @@ async fn podcast(State(state): State<AppState>, Json(req): Json<PodcastReq>) -> 
         let r = cmd::podcast::run_with(&dir, llm.as_ref(), &backend, req.script, req.prompt.as_deref(), &events).await;
         match r {
             Ok(_) => events.task_done(),
-            Err(e) => events.task_error(&e.to_string()),
+            Err(e) => {
+                events.step_failed(crate::task::Step::Podcast, &e.to_string());
+                events.task_error(&e.to_string());
+            }
         }
     });
     Json(json!({"ok": true, "id": id})).into_response()
@@ -332,8 +324,14 @@ async fn video(State(state): State<AppState>, Json(req): Json<VideoReq>) -> Resp
         let r = tokio::task::spawn_blocking(move || cmd::video::run_with(&dir2, &events2)).await;
         match r {
             Ok(Ok(())) => events.task_done(),
-            Ok(Err(e)) => events.task_error(&e.to_string()),
-            Err(e) => events.task_error(&e.to_string()),
+            Ok(Err(e)) => {
+                events.step_failed(crate::task::Step::Video, &e.to_string());
+                events.task_error(&e.to_string());
+            }
+            Err(e) => {
+                events.step_failed(crate::task::Step::Video, &e.to_string());
+                events.task_error(&e.to_string());
+            }
         }
     });
     Json(json!({"ok": true, "id": id})).into_response()

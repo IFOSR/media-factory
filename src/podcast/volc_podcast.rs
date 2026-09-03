@@ -50,10 +50,26 @@ impl VolcPodcast {
         self.speakers.clone()
     }
 
-    /// 覆盖发音人（用于任务级人数/音色选择）
-    pub fn with_speakers(mut self, speakers: Vec<String>) -> Self {
-        if !speakers.is_empty() {
-            self.speakers = speakers;
+    /// 按任务级人数/音色覆盖发音人；未指定的音色回落到配置默认
+    pub fn with_speaker_config(mut self, count: usize, s1: Option<String>, s2: Option<String>) -> Self {
+        let count = count.clamp(1, 2);
+        let base = self.speakers.clone();
+        let fallback = base.first().cloned().unwrap_or_default();
+        let pick = |i: usize, over: &Option<String>| -> String {
+            match over {
+                Some(s) if !s.is_empty() => s.clone(),
+                _ => base.get(i).cloned().unwrap_or_else(|| fallback.clone()),
+            }
+        };
+        let mut v = Vec::new();
+        if count >= 1 {
+            v.push(pick(0, &s1));
+        }
+        if count >= 2 {
+            v.push(pick(1, &s2));
+        }
+        if !v.is_empty() {
+            self.speakers = v;
         }
         self
     }
@@ -79,7 +95,7 @@ impl VolcPodcast {
                 "use_head_music": false,
                 "use_tail_music": false,
                 "audio_config": {"format": "mp3", "sample_rate": 24000, "speech_rate": 0},
-                "speaker_info": {"random_order": true, "speakers": self.speakers.clone()},
+                "speaker_info": {"random_order": self.speakers.len() > 1, "speakers": self.speakers.clone()},
                 "aigc_watermark": false,
                 "aigc_metadata": {"enable": true, "content_producer": "volcengine", "produce_id": "12abc", "content_propagator": "volcengine", "propagate_id": "34def"},
                 "input_info": {
@@ -120,38 +136,44 @@ impl VolcPodcast {
 
         let (mut ws, _resp) = tokio_tungstenite::connect_async(request).await?;
 
-        // 读取一个服务端帧；错误帧直接报错；返回事件号
+        // 读取一个服务端帧；错误帧直接报错；返回事件号（带超时，防止服务端不响应时永久挂起）
         async fn next_event(
             ws: &mut tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
+            timeout_secs: u64,
         ) -> anyhow::Result<Frame> {
-            loop {
-                match ws.next().await {
-                    Some(Ok(Message::Binary(data))) => {
-                        let f = volc_proto::decode_frame(&data)?;
-                        if f.message_type == volc_proto::MSG_ERROR {
-                            anyhow::bail!(
-                                "播客 API 返回错误（code {}）: {}",
-                                f.event,
-                                String::from_utf8_lossy(&f.payload)
-                            );
+            let wait = async {
+                loop {
+                    match ws.next().await {
+                        Some(Ok(Message::Binary(data))) => {
+                            let f = volc_proto::decode_frame(&data)?;
+                            if f.message_type == volc_proto::MSG_ERROR {
+                                anyhow::bail!(
+                                    "播客 API 返回错误（code {}）: {}",
+                                    f.event,
+                                    String::from_utf8_lossy(&f.payload)
+                                );
+                            }
+                            return Ok(f);
                         }
-                        return Ok(f);
+                        Some(Ok(Message::Ping(_))) => {
+                            let _ = ws.send(Message::Pong(vec![])).await;
+                        }
+                        Some(Ok(Message::Close(_))) => anyhow::bail!("连接被服务器关闭"),
+                        Some(Ok(_)) => {}
+                        Some(Err(e)) => anyhow::bail!("WebSocket 错误: {e}"),
+                        None => anyhow::bail!("连接结束"),
                     }
-                    Some(Ok(Message::Ping(_))) => {
-                        let _ = ws.send(Message::Pong(vec![])).await;
-                    }
-                    Some(Ok(Message::Close(_))) => anyhow::bail!("连接被服务器关闭"),
-                    Some(Ok(_)) => {}
-                    Some(Err(e)) => anyhow::bail!("WebSocket 错误: {e}"),
-                    None => anyhow::bail!("连接结束"),
                 }
-            }
+            };
+            tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), wait)
+                .await
+                .map_err(|_| anyhow::anyhow!("等待播客服务响应超时（{}s）", timeout_secs))?
         }
 
         // 1. start_connection（event=1，无 session_id）→ ConnectionStarted(50)
         let frame = volc_proto::encode_client_frame(volc_proto::EV_START_CONNECTION, None, b"{}");
         ws.send(Message::Binary(frame)).await?;
-        next_event(&mut ws).await?;
+        next_event(&mut ws, 30).await?;
 
         // 2. start_session（event=100，带 session_id + 请求 payload）→ SessionStarted(150)
         let session_id = uuid::Uuid::new_v4().to_string();
@@ -162,7 +184,7 @@ impl VolcPodcast {
             payload.to_string().as_bytes(),
         );
         ws.send(Message::Binary(frame)).await?;
-        next_event(&mut ws).await?;
+        next_event(&mut ws, 30).await?;
 
         // 3. finish_session（event=102）触发生成
         let frame = volc_proto::encode_client_frame(volc_proto::EV_FINISH_SESSION, Some(&session_id), b"{}");
@@ -178,7 +200,7 @@ impl VolcPodcast {
         // 4. 读生成事件：PodcastRoundResponse(361) 音频、RoundStart(360) 文本、PodcastEnd(363)、SessionFinished(152)
         let read_loop = async {
             loop {
-                let f = next_event(&mut ws).await?;
+                let f = next_event(&mut ws, 120).await?;
                 match f.event {
                     volc_proto::EV_PODCAST_ROUND_RESPONSE => {
                         audio_buf.extend_from_slice(&f.payload);
@@ -247,5 +269,53 @@ impl VolcPodcast {
             audio_buf
         };
         Ok(PodcastResult::Audio { bytes, subtitles })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn v() -> VolcPodcast {
+        VolcPodcast::new(
+            "appid".into(),
+            "token".into(),
+            vec!["voice_a".into(), "voice_b".into()],
+        )
+    }
+
+    #[test]
+    fn single_speaker_without_voice_falls_back_to_default() {
+        // 选 1 人但没选音色：应回落配置默认第一个音色
+        let x = v().with_speaker_config(1, None, None);
+        assert_eq!(x.speakers(), vec!["voice_a".to_string()]);
+    }
+
+    #[test]
+    fn single_speaker_with_host_voice() {
+        let x = v().with_speaker_config(1, Some("voice_x".into()), None);
+        assert_eq!(x.speakers(), vec!["voice_x".to_string()]);
+    }
+
+    #[test]
+    fn dual_speaker_partial_override() {
+        // 2 人只覆盖主持人：嘉宾回落默认
+        let x = v().with_speaker_config(2, Some("voice_x".into()), None);
+        assert_eq!(x.speakers(), vec!["voice_x".to_string(), "voice_b".to_string()]);
+    }
+
+    #[test]
+    fn payload_omits_random_order_for_single_speaker() {
+        // 单人：random_order 必须为 false（火山对单音色 random_order 报 speakers invalid）
+        let x = v().with_speaker_config(1, None, None);
+        let req = PodcastRequest { input_text: Some("测试".into()), nlp_texts: None, only_nlp_text: false };
+        let p = x.build_payload(&req);
+        assert_eq!(p["speaker_info"]["random_order"], false);
+        assert_eq!(p["speaker_info"]["speakers"].as_array().unwrap().len(), 1);
+
+        // 双人：random_order 为 true
+        let y = v();
+        let p2 = y.build_payload(&req);
+        assert_eq!(p2["speaker_info"]["random_order"], true);
     }
 }
