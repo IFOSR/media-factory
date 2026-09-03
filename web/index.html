@@ -66,12 +66,11 @@
   .task-item.active{background:var(--accent-soft);border-color:var(--accent-line)}
   .task-item .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;background:var(--faint)}
   .task-item .dot.done{background:var(--ok)}
-  .task-item .dot.running{background:var(--accent);animation:pulse 2s infinite}
+  .task-item .dot.running{background:var(--accent);box-shadow:0 0 6px var(--accent-soft)}
   .task-item .dot.failed{background:var(--err)}
   .task-item .tid{font-family:var(--mono);font-size:12.5px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .task-item .sub{font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .task-item .meta{flex:1;min-width:0}
-  @keyframes pulse{0%,100%{opacity:.55}50%{opacity:1}}
   .side-empty{color:var(--faint);font-size:12px;text-align:center;padding:30px 10px}
 
   /* ===== 主区 ===== */
@@ -105,7 +104,7 @@
   .step-row:last-child{padding-bottom:0}
   .tl-dot{position:absolute;left:8px;top:20px;width:14px;height:14px;border-radius:50%;
     background:var(--panel);border:2px solid var(--line2);z-index:2;transition:all .25s}
-  .step-row[data-state="thinking"] .tl-dot{border-color:var(--accent);background:var(--accent);box-shadow:0 0 8px var(--accent-soft);animation:pulse 2s infinite}
+  .step-row[data-state="thinking"] .tl-dot{border-color:var(--accent);background:var(--accent);box-shadow:0 0 8px var(--accent-soft)}
   .step-row[data-state="done"] .tl-dot{border-color:var(--ok);background:var(--ok)}
   .step-row[data-state="failed"] .tl-dot{border-color:var(--err);background:var(--err)}
 
