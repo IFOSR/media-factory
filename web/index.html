@@ -119,6 +119,11 @@
   .badge.thinking{background:var(--accent-soft);color:var(--accent)}
   .badge.done{background:var(--ok-soft);color:var(--ok)}
   .badge.failed{background:var(--err-soft);color:var(--err)}
+  .badge.stale{background:var(--panel3);color:var(--warn)}
+  .card-head .rerun{display:none;border:1px solid var(--line);border-radius:6px;padding:2px 9px;font-size:11px;color:var(--muted);transition:all .15s;flex-shrink:0}
+  .step-row[data-state="done"] .card-head .rerun,
+  .step-row[data-state="failed"] .card-head .rerun{display:inline-block}
+  .card-head .rerun:hover{border-color:var(--accent-line);color:var(--accent)}
   .chev{color:var(--faint);font-size:12px;transition:transform .2s}
   .step-row.collapsed .chev{transform:rotate(-90deg)}
   .card-body{border-top:1px solid var(--line)}
@@ -266,6 +271,7 @@
       <div id="curTask"><span style="color:var(--muted)">未选择任务</span></div>
       <span class="spacer"></span>
       <div id="status"></div>
+      <button class="iconbtn" id="btnRerunAll" onclick="rerunAll()" style="display:none">↻ 重跑全流程</button>
       <button class="iconbtn" onclick="toggleTheme()">🌓 主题</button>
       <button class="iconbtn" onclick="openConfig()">⚙ 配置</button>
     </header>
@@ -335,7 +341,7 @@
 /* ============================================================
  * 状态与常量
  * ============================================================ */
-const state = { currentId:null, es:null, refImages:[], view:'input', title:null };
+const state = { currentId:null, es:null, refImages:[], view:'input', title:null, params:null, stale:[] };
 const STEPS = [
   { id:'rewrite', num:'01', name:'改写',   sub:'爆款文案' },
   { id:'image',   num:'02', name:'生图',   sub:'核心意象配图' },
@@ -429,6 +435,7 @@ function renderTimeline(){
           <span class="card-title">${s.name}</span>
           <span class="card-sub">${s.sub}</span>
           <span class="card-status"><span class="badge idle" data-badge>待投料</span></span>
+          <button class="rerun" title="重跑此步骤（预填上次配置）" onclick="event.stopPropagation();rerunStep('${s.id}')">↻ 重跑</button>
           <span class="chev">▼</span>
         </div>
         <div class="card-body">
@@ -467,6 +474,63 @@ function setCardState(step,st){
 }
 /* 运行视图中，把某步骤切回投料态以便单步执行 */
 function toInput(step){ setCardState(step,'input'); collapseCard(step,false); setStatus('已为「'+stepName(step)+'」步骤切换到投料态'); }
+
+/* ===== 重跑：预填上次配置，允许修改后重新执行 ===== */
+function markDownstreamStale(step){
+  const order=['rewrite','image','podcast','video'];
+  const i=order.indexOf(step);
+  if(i<0) return;
+  state.stale=state.stale||[];
+  for(let j=i+1;j<order.length;j++){
+    const id=order[j];
+    const row=cardRow(id);
+    if(row && row.dataset.state==='done'){
+      setBadge(id,'上游已更新','stale');
+      if(!state.stale.includes(id)) state.stale.push(id);
+    }
+  }
+}
+
+function applyStepParams(step){
+  const p=(state.params||{})[step];
+  if(!p) return;
+  if(step==='rewrite'){
+    if(p.text!==undefined) document.getElementById('text').value=p.text;
+    else if(state.currentId) fetch('/api/files/'+state.currentId+'/input.md').then(r=>r.ok?r.text():null).then(t=>{ if(t) document.getElementById('text').value=t; });
+    document.getElementById('prompt').value=p.prompt||'';
+  } else if(step==='image'){
+    document.getElementById('imagePrompt').value=p.prompt||'';
+    document.getElementById('imgSize').value=p.size||'square';
+    document.getElementById('disclaimer').checked=!!p.disclaimer;
+    if(Array.isArray(p.ref_images)){ state.refImages=p.ref_images.slice(); renderRefImages(); }
+  } else if(step==='podcast'){
+    document.getElementById('podcastPrompt').value=p.prompt||'';
+    document.getElementById('speaker1').value=p.speaker1||'';
+    document.getElementById('speaker2').value=p.speaker2||'';
+  }
+}
+
+function rerunStep(step){
+  if(step==='video'){
+    if(confirm('重跑「视频」？将基于当前配图 / 播客音频 / 字幕重新合成视频。')) run('video');
+    return;
+  }
+  if(step==='rewrite' && !confirm('重跑「改写」会重新生成改写稿，rewritten.md 的手动编辑将被覆盖。继续？')) return;
+  applyStepParams(step);
+  setCardState(step,'input');
+  collapseCard(step,false);
+  markDownstreamStale(step);
+  setStatus('已载入上次配置，修改后点击「▶ 执行此步骤」');
+}
+
+function rerunAll(){
+  if(!state.currentId){ setStatus('请先在左侧选择一个历史任务',true); return; }
+  ['rewrite','image','podcast'].forEach(applyStepParams);
+  for(const s of STEPS){ setCardState(s.id,'input'); collapseCard(s.id,false); }
+  state.view='input';
+  document.getElementById('actionBar').style.display='flex';
+  setStatus('已载入上次全部配置，修改任意步骤后点击「🚀 一键全流程」');
+}
 
 /* ============================================================
  * 投料：上传（文档/参考图）
@@ -614,9 +678,10 @@ function collectInputs(step){
     if(s1) body.speaker1=s1;
     if(s2) body.speaker2=s2;
   }
+  // 统一归属：有当前任务（单步/重跑）就复用其 id；「新建任务」会清空 currentId
   const id=gv('taskId');
   if(id) body.id=id;
-  else if(state.currentId&&step!=='rewrite'&&step!=='run') body.id=state.currentId;
+  else if(state.currentId) body.id=state.currentId;
   if((step==='run'||step==='image')&&state.refImages.length) body.ref_images=state.refImages;
   if((step==='run'||step==='image')&&document.getElementById('disclaimer').checked) body.disclaimer=true;
   if(step==='run'||step==='image') body.size=document.getElementById('imgSize').value;
@@ -661,7 +726,10 @@ function handleEvent(ev){
   if(ev.type==='log'){ appendLog(ev.step,ev.text); }
   else if(ev.type==='step'){
     if(ev.status==='running'){ setCardState(ev.step,'thinking'); setStatus('<span class="spin"></span>正在执行：'+stepName(ev.step)+'…'); updateCurTask(state.currentId,'运行中 · '+stepName(ev.step)); }
-    else if(ev.status==='done'){ setCardState(ev.step,'done'); }
+    else if(ev.status==='done'){
+      setCardState(ev.step,'done');
+      if(state.stale) state.stale=state.stale.filter(x=>x!==ev.step);
+    }
     else if(ev.status==='failed'){ setCardState(ev.step,'failed'); }
   }
   else if(ev.type==='artifact'){ renderArtifact(ev.step,ev.name,ev.url); }
@@ -680,6 +748,7 @@ function updateCurTask(id,statusTxt){
 /* 回放（建立 SSE 前 / 历史任务） */
 function replayTask(t){
   if(t.title) state.title=t.title;
+  if(t.params) state.params=t.params;
   const steps=t.steps||{};
   for(const s of STEPS){
     const st=steps[s.id]||'pending';
@@ -693,6 +762,13 @@ function replayTask(t){
     if(m) renderArtifact(m.step,a.name,a.url);
   }
   if(t.status==='failed') setStatus('✗ 失败：'+(t.error||'未知'),true);
+  // 回放会重置徽章，这里恢复「上游已更新」提示
+  if(state.stale && state.stale.length){
+    for(const s of state.stale){
+      const row=cardRow(s);
+      if(row && row.dataset.state==='done') setBadge(s,'上游已更新','stale');
+    }
+  }
 }
 
 /* ============================================================
@@ -702,6 +778,9 @@ function newTask(){
   if(state.es){ state.es.close(); state.es=null; }
   state.currentId=null;
   state.title=null;
+  state.params=null;
+  state.stale=[];
+  document.getElementById('btnRerunAll').style.display='none';
   state.refImages=[];
   renderTimeline();
   renderRefImages();
@@ -770,6 +849,9 @@ async function loadTask(id){
   try{
     const t=await (await fetch('/api/tasks/'+id)).json();
     state.title=t.title||null;
+    state.params=t.params||null;
+    state.stale=[];
+    document.getElementById('btnRerunAll').style.display='';
     updateCurTask(id, t.status==='running'?'运行中':(t.status==='done'?'已完成':(t.status==='failed'?'失败':'')));
     replayTask(t);
     // 展开有内容的卡片，折叠空的

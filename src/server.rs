@@ -186,6 +186,11 @@ async fn run_pipeline(State(state): State<AppState>, Json(req): Json<RunReq>) ->
     let id = req.id.clone().unwrap_or_else(gen_id);
     let events = TaskEvents::streaming(Path::new(OUTPUT_ROOT), &id);
     events.init();
+    // 持久化各步骤执行参数（重跑预填用）
+    events.set_step_params("rewrite", json!({"text": req.text, "prompt": req.prompt}));
+    events.set_step_params("image", json!({"prompt": req.image_prompt, "size": req.size, "disclaimer": req.disclaimer, "ref_images": req.ref_images}));
+    events.set_step_params("podcast", json!({"prompt": req.podcast_prompt, "speaker1": req.speaker1, "speaker2": req.speaker2}));
+    events.set_step_params("video", json!({}));
 
     let resp_id = id.clone();
     let lock = state.run_lock.clone();
@@ -226,6 +231,7 @@ async fn rewrite(State(state): State<AppState>, Json(req): Json<RewriteReq>) -> 
     let id = req.id.clone().unwrap_or_else(gen_id);
     let events = TaskEvents::streaming(Path::new(OUTPUT_ROOT), &id);
     events.init();
+    events.set_step_params("rewrite", json!({"text": req.text.clone(), "prompt": req.prompt.clone()}));
     let lock = state.run_lock.clone();
     let id2 = id.clone();
     tokio::spawn(async move {
@@ -257,6 +263,7 @@ async fn image(State(state): State<AppState>, Json(req): Json<ImageReq>) -> Resp
         Err(e) => return (StatusCode::BAD_REQUEST, Json(json!({"ok": false, "error": e.to_string()}))).into_response(),
     };
     let events = TaskEvents::streaming(Path::new(OUTPUT_ROOT), &id);
+    events.set_step_params("image", json!({"prompt": req.prompt.clone(), "size": req.size.clone(), "disclaimer": req.disclaimer, "ref_images": req.ref_images.clone()}));
     let lock = state.run_lock.clone();
     tokio::spawn(async move {
         let _guard = lock.lock().await;
@@ -287,9 +294,12 @@ async fn podcast(State(state): State<AppState>, Json(req): Json<PodcastReq>) -> 
         Ok(b) => b,
         Err(e) => return (StatusCode::BAD_REQUEST, Json(json!({"ok": false, "error": e.to_string()}))).into_response(),
     };
+    let sp1 = req.speaker1.clone();
+    let sp2 = req.speaker2.clone();
     let speakers = build_speakers(req.speaker1, req.speaker2);
     let backend = apply_speakers(backend, speakers);
     let events = TaskEvents::streaming(Path::new(OUTPUT_ROOT), &id);
+    events.set_step_params("podcast", json!({"prompt": req.prompt.clone(), "speaker1": sp1, "speaker2": sp2}));
     let lock = state.run_lock.clone();
     tokio::spawn(async move {
         let _guard = lock.lock().await;
@@ -312,6 +322,7 @@ async fn video(State(state): State<AppState>, Json(req): Json<VideoReq>) -> Resp
     };
     let id = dir_id(&dir);
     let events = TaskEvents::streaming(Path::new(OUTPUT_ROOT), &id);
+    events.set_step_params("video", json!({}));
     let lock = state.run_lock.clone();
     tokio::spawn(async move {
         let _guard = lock.lock().await;

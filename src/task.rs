@@ -81,6 +81,9 @@ pub struct TaskMeta {
     /// 任务标题（从参考文案自动提取，言简意赅）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
+    /// 各步骤执行参数（重跑时预填表单用）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub params: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 impl TaskMeta {
@@ -99,6 +102,7 @@ impl TaskMeta {
             updated_at: now,
             error: None,
             title: None,
+            params: None,
         }
     }
 
@@ -209,7 +213,14 @@ impl TaskEvents {
     }
 
     pub fn init(&self) {
-        self.save_meta(&TaskMeta::new(&self.task_id));
+        // 已存在的任务（单步重跑场景）：保留 steps/params/title，仅重置任务级状态；
+        // 新任务：load_meta 回落到 TaskMeta::new，等价于全新创建
+        let mut m = self.load_meta();
+        m.status = "running".into();
+        m.current_step = None;
+        m.error = None;
+        m.touch();
+        self.save_meta(&m);
         self.emit(Event::Task { status: "running".into(), error: None });
     }
 
@@ -217,6 +228,14 @@ impl TaskEvents {
     pub fn set_title(&self, title: &str) {
         let mut m = self.load_meta();
         m.title = Some(title.to_string());
+        self.save_meta(&m);
+    }
+
+    /// 保存某步骤的执行参数（重跑预填用，按步骤合并）
+    pub fn set_step_params(&self, step: &str, params: serde_json::Value) {
+        let mut m = self.load_meta();
+        let entry = m.params.get_or_insert_with(serde_json::Map::new);
+        entry.insert(step.to_string(), params);
         self.save_meta(&m);
     }
 
@@ -310,5 +329,45 @@ mod tests {
             }
             _ => panic!("expected Log event"),
         }
+    }
+
+    #[test]
+    fn set_step_params_merges_by_step() {
+        let dir = tempfile::tempdir().unwrap();
+        let ev = TaskEvents::local(dir.path(), "t3");
+        ev.init();
+        ev.set_step_params("image", serde_json::json!({"size": "portrait", "disclaimer": true}));
+        ev.set_step_params("rewrite", serde_json::json!({"text": "abc"}));
+        let p = dir.path().join("t3/task.json");
+        let m: TaskMeta = serde_json::from_str(&std::fs::read_to_string(p).unwrap()).unwrap();
+        let params = m.params.unwrap();
+        assert_eq!(params["image"]["size"], "portrait");
+        assert_eq!(params["image"]["disclaimer"], true);
+        assert_eq!(params["rewrite"]["text"], "abc");
+        // 旧任务无 params 字段可反序列化
+        let old = r#"{"id":"x","status":"done","current_step":null,"steps":{},"created_at":"","updated_at":""}"#;
+        let m2: TaskMeta = serde_json::from_str(old).unwrap();
+        assert!(m2.params.is_none());
+    }
+}
+
+#[cfg(test)]
+mod init_tests {
+    use super::*;
+
+    #[test]
+    fn init_preserves_existing_steps_and_params() {
+        let dir = tempfile::tempdir().unwrap();
+        let ev = TaskEvents::local(dir.path(), "t4");
+        ev.init();
+        ev.set_step_params("image", serde_json::json!({"size": "portrait"}));
+        ev.step_done(Step::Image);
+        // 单步重跑 rewrite：init 不应清掉 image 的 done 与 params
+        ev.init();
+        let p = dir.path().join("t4/task.json");
+        let m: TaskMeta = serde_json::from_str(&std::fs::read_to_string(p).unwrap()).unwrap();
+        assert_eq!(m.status, "running");
+        assert_eq!(m.steps["image"], StepStatus::Done);
+        assert_eq!(m.params.unwrap()["image"]["size"], "portrait");
     }
 }
