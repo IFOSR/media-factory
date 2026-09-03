@@ -46,9 +46,7 @@ struct RunReq {
     image_prompt: Option<String>,
     #[serde(default)]
     podcast_prompt: Option<String>,
-    // 播客人物/人数（任务级，可覆盖配置默认）
-    #[serde(default)]
-    speaker_count: Option<u32>,
+    // 播客音色（任务级，可覆盖配置默认）
     #[serde(default)]
     speaker1: Option<String>,
     #[serde(default)]
@@ -92,8 +90,6 @@ struct PodcastReq {
     script: bool,
     #[serde(default)]
     prompt: Option<String>,
-    #[serde(default)]
-    speaker_count: Option<u32>,
     #[serde(default)]
     speaker1: Option<String>,
     #[serde(default)]
@@ -157,18 +153,18 @@ fn dir_id(dir: &Path) -> String {
 }
 
 /// 从任务级 speaker 参数构造发音人列表；未提供时返回 None（用配置默认）
-/// 任务级播客人数/音色覆盖（None = 未提供任何覆盖；音色留空则由后端回落配置默认）
-fn build_speakers(count: Option<u32>, s1: Option<String>, s2: Option<String>) -> Option<(usize, Option<String>, Option<String>)> {
-    if count.is_none() && s1.is_none() && s2.is_none() {
+/// 任务级播客音色覆盖（None = 未提供；固定双人，音色留空则回落配置默认）
+fn build_speakers(s1: Option<String>, s2: Option<String>) -> Option<(Option<String>, Option<String>)> {
+    if s1.is_none() && s2.is_none() {
         return None;
     }
-    Some((count.unwrap_or(2).clamp(1, 2) as usize, s1, s2))
+    Some((s1, s2))
 }
 
 /// 给播客 backend 应用任务级发音人覆盖
-fn apply_speakers(backend: podcast_backend::PodcastBackend, over: Option<(usize, Option<String>, Option<String>)>) -> podcast_backend::PodcastBackend {
+fn apply_speakers(backend: podcast_backend::PodcastBackend, over: Option<(Option<String>, Option<String>)>) -> podcast_backend::PodcastBackend {
     match over {
-        Some((count, s1, s2)) => backend.with_speaker_config(count, s1, s2),
+        Some((s1, s2)) => backend.with_speaker_override(s1, s2),
         None => backend,
     }
 }
@@ -200,7 +196,7 @@ async fn run_pipeline(State(state): State<AppState>, Json(req): Json<RunReq>) ->
             image: req.image_prompt.as_deref(),
             podcast: req.podcast_prompt.as_deref(),
         };
-        let speakers = build_speakers(req.speaker_count, req.speaker1, req.speaker2);
+        let speakers = build_speakers(req.speaker1, req.speaker2);
         let size = req.size.as_deref().map(crate::provider::ImageSize::parse).unwrap_or_default();
         // run_with_config 内部已处理 task_done / task_error
         let _ = cmd::run::run_with_config(
@@ -291,7 +287,7 @@ async fn podcast(State(state): State<AppState>, Json(req): Json<PodcastReq>) -> 
         Ok(b) => b,
         Err(e) => return (StatusCode::BAD_REQUEST, Json(json!({"ok": false, "error": e.to_string()}))).into_response(),
     };
-    let speakers = build_speakers(req.speaker_count, req.speaker1, req.speaker2);
+    let speakers = build_speakers(req.speaker1, req.speaker2);
     let backend = apply_speakers(backend, speakers);
     let events = TaskEvents::streaming(Path::new(OUTPUT_ROOT), &id);
     let lock = state.run_lock.clone();

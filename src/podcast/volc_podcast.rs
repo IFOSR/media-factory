@@ -50,9 +50,8 @@ impl VolcPodcast {
         self.speakers.clone()
     }
 
-    /// 按任务级人数/音色覆盖发音人；未指定的音色回落到配置默认
-    pub fn with_speaker_config(mut self, count: usize, s1: Option<String>, s2: Option<String>) -> Self {
-        let count = count.clamp(1, 2);
+    /// 任务级音色覆盖（固定双人；未指定的音色回落到配置默认）
+    pub fn with_speaker_override(mut self, s1: Option<String>, s2: Option<String>) -> Self {
         let base = self.speakers.clone();
         let fallback = base.first().cloned().unwrap_or_default();
         let pick = |i: usize, over: &Option<String>| -> String {
@@ -61,16 +60,7 @@ impl VolcPodcast {
                 _ => base.get(i).cloned().unwrap_or_else(|| fallback.clone()),
             }
         };
-        let mut v = Vec::new();
-        if count >= 1 {
-            v.push(pick(0, &s1));
-        }
-        if count >= 2 {
-            v.push(pick(1, &s2));
-        }
-        if !v.is_empty() {
-            self.speakers = v;
-        }
+        self.speakers = vec![pick(0, &s1), pick(1, &s2)];
         self
     }
 
@@ -286,36 +276,31 @@ mod tests {
 
     #[test]
     fn single_speaker_without_voice_falls_back_to_default() {
-        // 选 1 人但没选音色：应回落配置默认第一个音色
-        let x = v().with_speaker_config(1, None, None);
-        assert_eq!(x.speakers(), vec!["voice_a".to_string()]);
+        // 双人固定；未选音色回落配置默认
+        let x = v().with_speaker_override(None, None);
+        assert_eq!(x.speakers(), vec!["voice_a".to_string(), "voice_b".to_string()]);
     }
 
     #[test]
     fn single_speaker_with_host_voice() {
-        let x = v().with_speaker_config(1, Some("voice_x".into()), None);
-        assert_eq!(x.speakers(), vec!["voice_x".to_string()]);
+        let x = v().with_speaker_override(Some("voice_x".into()), None);
+        assert_eq!(x.speakers(), vec!["voice_x".to_string(), "voice_b".to_string()]);
     }
 
     #[test]
     fn dual_speaker_partial_override() {
-        // 2 人只覆盖主持人：嘉宾回落默认
-        let x = v().with_speaker_config(2, Some("voice_x".into()), None);
+        // 只覆盖主持人：嘉宾回落默认
+        let x = v().with_speaker_override(Some("voice_x".into()), None);
         assert_eq!(x.speakers(), vec!["voice_x".to_string(), "voice_b".to_string()]);
     }
 
     #[test]
     fn payload_omits_random_order_for_single_speaker() {
-        // 单人：random_order 必须为 false（火山对单音色 random_order 报 speakers invalid）
-        let x = v().with_speaker_config(1, None, None);
-        let req = PodcastRequest { input_text: Some("测试".into()), nlp_texts: None, only_nlp_text: false };
-        let p = x.build_payload(&req);
-        assert_eq!(p["speaker_info"]["random_order"], false);
-        assert_eq!(p["speaker_info"]["speakers"].as_array().unwrap().len(), 1);
-
-        // 双人：random_order 为 true
+        // 双人：random_order 为 true；speakers 固定 2 个
         let y = v();
+        let req = PodcastRequest { input_text: Some("测试".into()), nlp_texts: None, only_nlp_text: false };
         let p2 = y.build_payload(&req);
         assert_eq!(p2["speaker_info"]["random_order"], true);
+        assert_eq!(p2["speaker_info"]["speakers"].as_array().unwrap().len(), 2);
     }
 }

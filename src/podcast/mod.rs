@@ -122,10 +122,10 @@ pub enum PodcastBackend {
 }
 
 impl PodcastBackend {
-    /// 任务级人数/音色覆盖（TTS 后端忽略，使用自身 default_voices）
-    pub fn with_speaker_config(self, count: usize, s1: Option<String>, s2: Option<String>) -> Self {
+    /// 任务级音色覆盖（固定双人；TTS 后端忽略，使用自身 default_voices）
+    pub fn with_speaker_override(self, s1: Option<String>, s2: Option<String>) -> Self {
         match self {
-            PodcastBackend::Volc(v) => PodcastBackend::Volc(v.with_speaker_config(count, s1, s2)),
+            PodcastBackend::Volc(v) => PodcastBackend::Volc(v.with_speaker_override(s1, s2)),
             other => other,
         }
     }
@@ -153,23 +153,11 @@ pub fn resolve_podcast(cfg: &Config) -> anyhow::Result<PodcastBackend> {
                 .get("appid")
                 .cloned()
                 .ok_or_else(|| anyhow::anyhow!("volc-podcast 缺少 appid，请在配置向导中补全"))?;
-            // 人数：1 或 2（默认 2）
-            let count = extra
-                .get("speaker_count")
-                .and_then(|s| s.parse::<usize>().ok())
-                .unwrap_or(2)
-                .clamp(1, 2);
-            let mut speakers = Vec::new();
-            if count >= 1 {
-                speakers.push(
-                    extra.get("speaker1").cloned().unwrap_or_else(|| DEFAULT_SPEAKER_A.to_string()),
-                );
-            }
-            if count >= 2 {
-                speakers.push(
-                    extra.get("speaker2").cloned().unwrap_or_else(|| DEFAULT_SPEAKER_B.to_string()),
-                );
-            }
+            // 双人音色（固定 2 人对话）
+            let speakers = vec![
+                extra.get("speaker1").cloned().unwrap_or_else(|| DEFAULT_SPEAKER_A.to_string()),
+                extra.get("speaker2").cloned().unwrap_or_else(|| DEFAULT_SPEAKER_B.to_string()),
+            ];
             Ok(PodcastBackend::Volc(VolcPodcast::new(appid, api_key.clone(), speakers)))
         }
         _ => Ok(PodcastBackend::Tts(tts::resolve_tts(cfg)?)),

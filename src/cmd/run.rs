@@ -66,7 +66,7 @@ pub async fn run_with_config(
     reference: Vec<PathBuf>,
     prompts: &Prompts<'_>,
     events: &TaskEvents,
-    podcast_speakers: Option<(usize, Option<String>, Option<String>)>,
+    podcast_speakers: Option<(Option<String>, Option<String>)>,
     disclaimer: bool,
     size: provider::ImageSize,
 ) -> anyhow::Result<String> {
@@ -103,7 +103,7 @@ pub async fn run_with_config(
         }
     };
     let backend = match (backend, podcast_speakers) {
-        (b, Some((count, s1, s2))) => b.with_speaker_config(count, s1, s2),
+        (b, Some((s1, s2))) => b.with_speaker_override(s1, s2),
         (b, None) => b,
     };
     if let Err(e) = podcast::run_with(&dir, llm, &backend, false, prompts.podcast, events).await {

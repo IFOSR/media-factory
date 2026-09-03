@@ -405,14 +405,10 @@ function stepInputPane(step){
     <div class="f"><label>播客风格要求（可选）</label>
       <textarea id="podcastPrompt" class="sm" placeholder="如：轻松幽默，两位主播多互动"></textarea></div>
     <div class="frow">
-      <label class="chk">人数 <select id="speakerCount">
-        <option value="2">2 人（双人对话）</option>
-        <option value="1">1 人（单人播报）</option>
-      </select></label>
       <label class="chk">主持人 <select id="speaker1">${voiceOptions()}</select></label>
-      <label class="chk" id="speaker2Wrap">嘉宾 <select id="speaker2">${voiceOptions()}</select></label>
+      <label class="chk">嘉宾 <select id="speaker2">${voiceOptions()}</select></label>
     </div>
-    <div class="hint">留空音色则用配置默认；火山播客仅支持双人对话，单人播报需改用 TTS provider。</div>`;
+    <div class="hint">双人对话播客；留空音色则用配置默认。</div>`;
   if(step==='video') return `
     <div class="hint" style="padding:4px 0">视频步骤自动使用上方配图与播客音频合成（含字幕），无需额外输入。待播客与配图就绪后执行。</div>`;
   return '';
@@ -480,9 +476,8 @@ function bindInputEvents(){
   const docBtn=document.getElementById('docBtn'),docFile=document.getElementById('docFile');
   if(docBtn){ docBtn.onclick=()=>docFile.click(); docFile.onchange=()=>{ const f=docFile.files[0]; if(f) uploadDoc(f); docFile.value=''; }; }
   const imgBtn=document.getElementById('imgBtn'),fileInput=document.getElementById('file');
-  if(imgBtn){ imgBtn.onclick=()=>fileInput.click(); fileInput.onchange=()=>{ for(const f of fileInput.files) uploadImage(f); fileInput.value=''; }; }
-  const cnt=document.getElementById('speakerCount');
-  if(cnt){ cnt.onchange=()=>{ document.getElementById('speaker2Wrap').style.display=cnt.value==='1'?'none':'flex'; }; }
+  if(imgBtn){ imgBtn.onclick=()=>fileInput.click(); fileInput.onchange=()=>{ for(const f of fileInput.files) uploadImage(f); fileInput.value=''; };
+  }
 }
 
 async function uploadImage(file){
@@ -616,10 +611,9 @@ function collectInputs(step){
   if(step==='run'&&gv('podcastPrompt')) body.podcast_prompt=gv('podcastPrompt');
   if(step==='podcast'&&gv('podcastPrompt')) body.prompt=gv('podcastPrompt');
   if(step==='run'||step==='podcast'){
-    body.speaker_count=parseInt(document.getElementById('speakerCount').value)||2;
     const s1=gv('speaker1'),s2=gv('speaker2');
     if(s1) body.speaker1=s1;
-    if(s2&&body.speaker_count===2) body.speaker2=s2;
+    if(s2) body.speaker2=s2;
   }
   const id=gv('taskId');
   if(id) body.id=id;
@@ -800,7 +794,7 @@ const IMAGE_BUILTINS=[
   {key:'doubao-seedream',label:'doubao-seedream（豆包生图）'},
 ];
 const PODCAST_BUILTINS=[
-  {key:'volc-podcast',label:'volc-podcast（火山播客大模型，推荐）',extra:['appid','speaker_count','speaker1','speaker2']},
+  {key:'volc-podcast',label:'volc-podcast（火山播客大模型，双人对话）',extra:['appid','speaker1','speaker2']},
   {key:'openai-tts',label:'openai-tts（通用 TTS）'},
   {key:'gemini-tts',label:'gemini-tts（通用 TTS）'},
   {key:'volc-tts',label:'volc-tts（火山豆包语音）',extra:['appid']},
@@ -873,11 +867,8 @@ function renderProviderFields(){
   if(meta){
     html+=pmField('API Key / Access Token','pmApiKey',p?.api_key||'',true);
     for(const ek of (meta.extra||[])){
-      if(ek==='speaker_count'){
-        const cur=p?.extra?.speaker_count||'2';
-        html+=`<div style="margin-bottom:10px"><label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">人数</label><select id="pm_speaker_count"><option value="1">1 人（单人播报）</option><option value="2">2 人（双人对话）</option></select></div>`;
-        setTimeout(()=>{ document.getElementById('pm_speaker_count').value=cur; },0);
-      } else if(ek==='speaker1'||ek==='speaker2'){
+      if(ek==='speaker_count'){ continue; } // 人数选项已移除，固定双人
+      else if(ek==='speaker1'||ek==='speaker2'){
         const cur=p?.extra?.[ek]||'';
         let opts='<option value="">默认音色</option>';
         for(const v of PODCAST_VOICES) opts+=`<option value="${v.id}">${v.label}</option>`;
