@@ -172,9 +172,12 @@
   .step-row:not([data-state="idle"]) .run-idle{display:none}
   .step-actions{margin-top:14px;display:flex;justify-content:flex-end}
 
-  /* 产物区 */
+  /* 产物区：投料态与运行态都可见（重跑时原地刷新） */
   .artifact-area{padding:16px 18px}
   .artifact-area:empty{display:none}
+  .step-row[data-state="input"] .artifact-area{border-top:1px dashed var(--line);background:var(--panel2)}
+  .step-row[data-state="input"] .artifact-area::before{content:"上次产物（重跑后自动更新）";display:block;
+    font-family:var(--mono);font-size:11px;color:var(--faint);letter-spacing:.5px;margin-bottom:10px}
   .artifact{margin-bottom:14px;animation:fadeUp .3s ease}
   .artifact:last-child{margin-bottom:0}
   .artifact .cap{font-family:var(--mono);font-size:11px;color:var(--accent);letter-spacing:.5px;
@@ -445,8 +448,8 @@ function renderTimeline(){
           <div class="pane pane-run">
             <div class="run-idle">⏸ 等待上游步骤完成 · <a onclick="event.stopPropagation();toInput('${s.id}')">为此步骤投料并执行</a></div>
             <div class="log-area"></div>
-            <div class="artifact-area"></div>
           </div>
+          <div class="artifact-area"></div>
         </div>
       </div>`;
     tl.appendChild(row);
@@ -725,7 +728,12 @@ function subscribe(taskId){
 function handleEvent(ev){
   if(ev.type==='log'){ appendLog(ev.step,ev.text); }
   else if(ev.type==='step'){
-    if(ev.status==='running'){ setCardState(ev.step,'thinking'); setStatus('<span class="spin"></span>正在执行：'+stepName(ev.step)+'…'); updateCurTask(state.currentId,'运行中 · '+stepName(ev.step)); }
+    if(ev.status==='running'){
+      clearRunPane(ev.step); // 该步骤开始重跑：原地清旧日志与产物，稍后被新结果替换
+      setCardState(ev.step,'thinking');
+      setStatus('<span class="spin"></span>正在执行：'+stepName(ev.step)+'…');
+      updateCurTask(state.currentId,'运行中 · '+stepName(ev.step));
+    }
     else if(ev.status==='done'){
       setCardState(ev.step,'done');
       if(state.stale) state.stale=state.stale.filter(x=>x!==ev.step);
