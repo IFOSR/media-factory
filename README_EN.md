@@ -63,7 +63,7 @@ Manual: install [Rust](https://rustup.rs), then `cargo build --release`.
 media-factory config
 
 # ② Start the web app
-media-factory serve            # open http://localhost:8092
+media-factory serve            # start in background, open http://localhost:8092 (on a server use http://<IP>:8092)
 
 # ③ In the web UI: + New Task → paste reference text → 🚀 Run all
 ```
@@ -96,7 +96,7 @@ media-factory image   [--id ID] [--ref IMG]... [--prompt S] [--disclaimer] [--si
 media-factory podcast [--id ID] [--script] [--prompt S]
 media-factory video   [--id ID]
 media-factory config      # interactive wizard
-media-factory serve       # web server (--port 8092)
+media-factory serve       # web server (background; --port sets port, --foreground for debugging)
 ```
 
 Resume after failure: `media-factory podcast --id <task-id>` (upstream artifacts are on disk).
@@ -129,14 +129,14 @@ output/<task-id>/
 |----------|----------|
 | macOS Apple Silicon / Intel | ✅ |
 | Linux x64 (incl. WSL; needs ffmpeg + fonts-noto-cjk) | ✅ |
-| Windows x64 (`media-factory.exe`; serve.sh not applicable) | ✅ |
+| Windows x64 (`media-factory.exe`; background serve not applicable, use `--foreground`) | ✅ |
 
 ## Development
 
 ```bash
 cargo test    # 41 tests (protocol wiremock / real ffmpeg muxing / e2e pipeline)
 cargo clippy  # 0 warnings
-./serve.sh restart   # local web service management
+media-factory serve --restart   # manage web service: --stop / --restart / --status
 ```
 
 Design docs in `docs/plans/`.

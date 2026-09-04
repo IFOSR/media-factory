@@ -2,6 +2,7 @@ use clap::{Parser, Subcommand};
 
 mod cmd;
 mod config;
+mod daemon;
 mod ffmpeg;
 mod llm;
 mod pi_rpc;
@@ -73,11 +74,23 @@ enum Commands {
         /// 尺寸：square(方形) / portrait(手机竖屏 9:16) / landscape(横屏 16:9)
         #[arg(long, value_parser = ["square", "portrait", "landscape"])] size: Option<String>,
     },
-    /// 启动 Web 服务（功能与 CLI 一致）
+    /// 启动 Web 服务（默认后台运行，可用 --stop/--restart/--status 管理）
     Serve {
         /// 监听端口
         #[arg(long, default_value_t = 8092)]
         port: u16,
+        /// 前台运行（调试用，Ctrl+C 退出）
+        #[arg(long)]
+        foreground: bool,
+        /// 停止后台服务
+        #[arg(long, conflicts_with_all = ["restart", "status", "foreground"])]
+        stop: bool,
+        /// 重启后台服务
+        #[arg(long, conflicts_with = "status")]
+        restart: bool,
+        /// 查看服务状态
+        #[arg(long)]
+        status: bool,
     },
 }
 
@@ -94,8 +107,10 @@ fn require_pi() -> anyhow::Result<()> {
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
-    // 前置检查：除 config 外都需要 pi；video/run 需要 ffmpeg
-    if !matches!(&cli.command, Commands::Config) {
+    // 前置检查：除 config 和 serve 管理动作外都需要 pi；video/run 需要 ffmpeg
+    let needs_pi = !matches!(&cli.command, Commands::Config)
+        && !matches!(&cli.command, Commands::Serve { stop: true, .. } | Commands::Serve { status: true, .. });
+    if needs_pi {
         require_pi()?;
     }
     if matches!(&cli.command, Commands::Video { .. } | Commands::Run { .. }) {
@@ -119,8 +134,19 @@ async fn main() -> anyhow::Result<()> {
         Commands::Run { input, id, r#ref, prompt, image_prompt, podcast_prompt, disclaimer, size } => {
             cmd::run::run(input, id, r#ref, prompt, image_prompt, podcast_prompt, disclaimer, size).await?;
         }
-        Commands::Serve { port } => {
-            server::run(port).await?;
+        Commands::Serve { port, foreground, stop, restart, status } => {
+            if stop {
+                daemon::stop()?;
+            } else if status {
+                daemon::status(port)?;
+            } else if restart {
+                daemon::stop()?;
+                daemon::start(port)?;
+            } else if foreground {
+                server::run(port).await?;
+            } else {
+                daemon::start(port)?;
+            }
         }
     }
     Ok(())

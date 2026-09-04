@@ -23,6 +23,9 @@ base64 = "0.22"
 chrono = "0.4"
 dirs = "5"
 
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"  # serve 后台运行：setsid / kill 信号管理
+
 [dev-dependencies]
 wiremock = "0.6"
 tempfile = "3"

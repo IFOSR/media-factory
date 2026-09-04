@@ -605,7 +605,7 @@ pub async fn run(port: u16) -> anyhow::Result<()> {
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind(("0.0.0.0", port)).await?;
-    println!("✓ Web 服务已启动: http://localhost:{port}");
+    println!("✓ Web 服务已启动: http://localhost:{port}（监听 0.0.0.0，外网可访问 http://<服务器IP>:{port}）");
     axum::serve(listener, app).await?;
     Ok(())
 }

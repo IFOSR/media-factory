@@ -63,7 +63,7 @@ git clone https://github.com/IFOSR/media-factory.git && cd media-factory
 media-factory config
 
 # ② 启动 Web 服务
-media-factory serve            # 打开 http://localhost:8092
+media-factory serve            # 后台启动，打开 http://localhost:8092（服务器上外网用 http://<IP>:8092）
 
 # ③ 在 Web 端：＋新建任务 → 填参考文案 → 🚀 一键全流程
 ```
@@ -96,7 +96,7 @@ media-factory image   [--id ID] [--ref IMG]... [--prompt S] [--disclaimer] [--si
 media-factory podcast [--id ID] [--script] [--prompt S]
 media-factory video   [--id ID]
 media-factory config      # 交互式配置向导
-media-factory serve       # Web 服务（--port 8092）
+media-factory serve       # Web 服务（后台运行；--port 指定端口，--foreground 前台调试）
 ```
 
 失败续跑：`media-factory podcast --id <任务id>`（上游产物已落盘）。
@@ -129,14 +129,14 @@ output/<任务id>/
 |------|-----------|
 | macOS Apple Silicon / Intel | ✅ |
 | Linux x64（含 WSL，需 ffmpeg + fonts-noto-cjk） | ✅ |
-| Windows x64（`media-factory.exe`，serve.sh 不适用） | ✅ |
+| Windows x64（`media-factory.exe`，serve 后台运行不适用，请用 `--foreground`） | ✅ |
 
 ## 开发
 
 ```bash
 cargo test    # 41 个测试（协议 wiremock / ffmpeg 真实合成 / 端到端流水线）
 cargo clippy  # 0 警告
-./serve.sh restart   # 本地 Web 服务管理
+media-factory serve --restart   # Web 服务管理：--stop / --restart / --status
 ```
 
 设计文档见 `docs/plans/`。

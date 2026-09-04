@@ -110,8 +110,8 @@ post_install() {
 
 下一步：
   1. 配置向导（选模型、填密钥）:   media-factory wizard
-  2. 启动 Web 服务（端口 8092）:   media-factory serve
-     （服务管理：项目内 ./serve.sh start|stop|restart|status）
+  2. 启动 Web 服务（端口 8092，后台运行）: media-factory serve
+     （服务管理：media-factory serve --stop / --restart / --status）
   3. CLI 全流程示例:
      media-factory run input.txt --disclaimer --size portrait
 EOF
