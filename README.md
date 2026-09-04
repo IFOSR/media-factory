@@ -26,7 +26,13 @@
 curl -fsSL https://raw.githubusercontent.com/IFOSR/media-factory/main/install.sh | bash
 ```
 
-默认优先下载 Release 预编译包；不可用时自动回退源码编译（缺失 Rust 会自动安装 rustup）。
+下载源策略：**自建镜像优先（国内友好，含 md5 校验）→ GitHub 回退 → 源码编译回退**（缺失 Rust 会自动安装 rustup）。
+
+```bash
+./install.sh --mirror   # 强制自建镜像
+./install.sh --github   # 强制 GitHub
+MF_MIRROR=https://你的镜像 ./install.sh   # 覆盖镜像地址
+```
 
 <details>
 <summary>更多安装方式</summary>

@@ -26,7 +26,13 @@ Reference ──► ① Rewrite (viral copy) ──► ② Image (cover) ──�
 curl -fsSL https://raw.githubusercontent.com/IFOSR/media-factory/main/install.sh | bash
 ```
 
-Downloads the prebuilt Release binary by default; falls back to building from source automatically (installs rustup if Rust is missing).
+Download sources: **self-hosted mirror first (China-friendly, md5-verified) → GitHub fallback → source-build fallback** (installs rustup if Rust is missing).
+
+```bash
+./install.sh --mirror   # force self-hosted mirror
+./install.sh --github   # force GitHub
+MF_MIRROR=https://your-mirror ./install.sh   # override mirror URL
+```
 
 <details>
 <summary>More options</summary>

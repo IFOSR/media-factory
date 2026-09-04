@@ -7,9 +7,12 @@
 #      curl -fsSL https://raw.githubusercontent.com/IFOSR/media-factory/main/install.sh | bash
 #   2) 克隆后安装：
 #      git clone https://github.com/IFOSR/media-factory.git && cd media-factory && ./install.sh
-#   3) 指定模式：
+#   3) 指定模式 / 下载源：
 #      ./install.sh --release   # 仅安装 Release 预编译版
 #      ./install.sh --source    # 仅源码编译安装
+#      ./install.sh --mirror    # 仅从自建镜像下载（国内友好）
+#      ./install.sh --github    # 仅从 GitHub 下载
+#   环境变量 MF_MIRROR 可覆盖镜像地址（默认 https://14.103.216.193）
 #
 # 可选参数：
 #   --bin-dir <dir>   安装目录（默认 ~/.media-factory/bin）
@@ -19,8 +22,11 @@ set -euo pipefail
 
 REPO="IFOSR/media-factory"
 MODE="auto"          # auto | release | source
+DL_SRC="auto"        # auto(镜像优先→GitHub 回退) | mirror | github
 BIN_DIR="$HOME/.media-factory/bin"
 VERSION="latest"
+MIRROR="${MF_MIRROR:-https://14.103.216.193}"
+MIRROR_BASE="$MIRROR/media-factory-release"
 
 # ---------- 输出辅助 ----------
 info()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
@@ -33,6 +39,8 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --release)  MODE="release"; shift ;;
     --source)   MODE="source";  shift ;;
+    --mirror)   DL_SRC="mirror"; MODE="release"; shift ;;
+    --github)   DL_SRC="github"; MODE="release"; shift ;;
     --bin-dir)  BIN_DIR="${2:?--bin-dir 需要一个目录参数}"; shift 2 ;;
     --version)  VERSION="${2:?--version 需要一个版本参数，如 v0.1.0}"; shift 2 ;;
     -h|--help)  sed -n '2,20p' "$0"; exit 0 ;;
@@ -65,8 +73,6 @@ case "$ARCH_RAW" in
   *)             die "不支持的架构: $ARCH_RAW" ;;
 esac
 ASSET="media-factory-${TARGET_ARCH}-${TARGET_OS}.tar.gz"
-[ "$VERSION" = "latest" ] && RELEASE_URL="https://github.com/${REPO}/releases/latest/download/${ASSET}" \
-                          || RELEASE_URL="https://github.com/${REPO}/releases/download/${VERSION}/${ASSET}"
 
 info "Media Factory 安装器（模式: ${MODE}，平台: ${TARGET_ARCH}-${TARGET_OS}）"
 
@@ -112,17 +118,65 @@ EOF
   printf '\n\033[1m提示：\033[0m若当前终端找不到 media-factory 命令，执行 export PATH="%s:$PATH" 或重开终端。\n' "$BIN_DIR"
 }
 
-# ---------- 方式一：Release 预编译包 ----------
-install_release() {
-  info "下载 Release: ${RELEASE_URL}"
+# ---------- 方式一：Release 预编译包（多源：镜像优先 → GitHub 回退） ----------
+# 镜像 latest 语义：读镜像上的 VERSION 文件解析具体版本
+mirror_version() {
+  curl -fsSL --connect-timeout 8 "$MIRROR_BASE/VERSION" 2>/dev/null || true
+}
+
+try_download() { # $1=url $2=来源标记 $3=可选 md5
+  local url="$1" from="$2" want_md5="${3:-}"
+  info "下载 Release（${from}）: ${url}"
   local tmp; tmp="$(mktemp -d)"
-  if ! curl -fsSL --connect-timeout 15 "$RELEASE_URL" -o "$tmp/pkg.tar.gz"; then
-    rm -rf "$tmp"
-    return 1
+  if ! curl -fsSL --connect-timeout 15 "$url" -o "$tmp/pkg.tar.gz"; then
+    rm -rf "$tmp"; return 1
+  fi
+  if [ -n "$want_md5" ]; then
+    local got; got="$(md5 -q "$tmp/pkg.tar.gz" 2>/dev/null || md5sum "$tmp/pkg.tar.gz" | awk '{print $1}')"
+    if [ "$got" != "$want_md5" ]; then
+      warn "镜像包校验失败（md5 不匹配），尝试下一来源"
+      rm -rf "$tmp"; return 1
+    fi
   fi
   mkdir -p "$BIN_DIR"
   tar -xzf "$tmp/pkg.tar.gz" -C "$BIN_DIR" media-factory
-  rm -rf "$tmp"
+  rm -rf "$tmp"; return 0
+}
+
+install_release() {
+  # 解析 GitHub 下载路径
+  local gh_path
+  [ "$VERSION" = "latest" ] && gh_path="releases/latest/download" || gh_path="releases/download/${VERSION}"
+  local gh_url="https://github.com/${REPO}/${gh_path}/${ASSET}"
+
+  # 镜像 URL（平铺目录，latest 时读 VERSION）
+  local mver="$VERSION" mirror_md5=""
+  if [ "$VERSION" = "latest" ]; then
+    mver="$(mirror_version)"
+    [ -n "$mver" ] || mver="latest"
+  fi
+  local mirror_url="$MIRROR_BASE/${ASSET}"
+
+  # 镜像 md5（用于校验）
+  mirror_md5="$(curl -fsSL --connect-timeout 8 "$MIRROR_BASE/md5sums.txt" 2>/dev/null | grep " ${ASSET}\$" | awk '{print $1}' || true)"
+
+  case "$DL_SRC" in
+    mirror)
+      try_download "$mirror_url" "镜像 $MIRROR" "$mirror_md5" || return 1
+      ;;
+    github)
+      try_download "$gh_url" "GitHub" "" || return 1
+      ;;
+    auto)
+      # 镜像优先（含 md5 校验）；镜像无该版本或不可达时回退 GitHub
+      local want_mirror=true
+      if [ "$VERSION" != "latest" ] && [ -z "$mirror_md5" ]; then
+        want_mirror=false   # 镜像上没有这个版本的 md5 记录，视为未同步，直接走 GitHub
+      fi
+      if $want_mirror && try_download "$mirror_url" "镜像 $MIRROR" "$mirror_md5"; then return 0; fi
+      try_download "$gh_url" "GitHub" "" || return 1
+      ;;
+  esac
   return 0
 }
 
