@@ -135,7 +135,7 @@ pub enum Event {
     /// 思考链路动作日志（流式展示后台处理细节）
     Log { step: String, text: String },
     Chunk { step: String, delta: String },
-    Artifact { step: String, name: String, url: String },
+    Artifact { step: String, name: String, url: String, size: u64 },
     Progress { step: String, percent: f64 },
     Task { status: String, error: Option<String> },
 }
@@ -274,7 +274,10 @@ impl TaskEvents {
 
     pub fn artifact(&self, step: Step, name: &str) {
         let url = format!("/api/files/{}/{}", self.task_id, name);
-        self.emit(Event::Artifact { step: step.as_str().into(), name: name.into(), url });
+        let size = std::fs::metadata(Path::new("output").join(&self.task_id).join(name))
+            .map(|m| m.len())
+            .unwrap_or(0);
+        self.emit(Event::Artifact { step: step.as_str().into(), name: name.into(), url, size });
     }
 
     #[allow(dead_code)]

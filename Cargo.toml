@@ -22,6 +22,7 @@ thiserror = "1"
 base64 = "0.22"
 chrono = "0.4"
 dirs = "5"
+zip = { version = "2", default-features = false, features = ["deflate"] }  # 产物整包下载
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"  # serve 后台运行：setsid / kill 信号管理

@@ -45,8 +45,32 @@ fn find_cjk_font() -> Option<PathBuf> {
         "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
         "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
         "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+        "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",      // Ubuntu/Debian fonts-wqy-zenhei
+        "/usr/share/fonts/wqy-zenhei/wqy-zenhei.ttc",        // 其他发行版路径
     ];
     CANDIDATES.iter().map(PathBuf::from).find(|p| p.exists())
+        .or_else(cjk_font_via_fontconfig)
+}
+
+/// 静态候选之外的兜底：问 fontconfig 要一个支持中文的字体文件（兼容任意发行版）
+#[cfg(not(target_os = "windows"))]
+fn cjk_font_via_fontconfig() -> Option<PathBuf> {
+    let out = Command::new("fc-list").args([":lang=zh", "file"]).output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    // 每行形如 "/path/to/font.ttc: "
+    let path = stdout
+        .lines()
+        .find_map(|l| l.split(':').next().map(str::trim).filter(|s| !s.is_empty()))?;
+    let p = PathBuf::from(path);
+    p.exists().then_some(p)
+}
+
+#[cfg(target_os = "windows")]
+fn cjk_font_via_fontconfig() -> Option<PathBuf> {
+    None
 }
 
 /// 探测图片宽度（像素），用于按宽度自适应免责声明字号
@@ -65,7 +89,7 @@ fn probe_image_width(image: &Path) -> Option<u32> {
 /// 在图片右上角叠加免责声明文字（黄色小字 + 黑描边，不遮挡主体内容）；输出写入 out
 pub fn overlay_disclaimer(image: &Path, text: &str, out: &Path) -> anyhow::Result<()> {
     let font = find_cjk_font()
-        .ok_or_else(|| anyhow::anyhow!("未找到中文字体，无法在图片上叠加免责声明"))?;
+        .ok_or_else(|| anyhow::anyhow!("未找到中文字体，无法在图片上叠加免责声明。Linux 请安装：apt install fonts-noto-cjk"))?;
     // 文字写入临时文件，避免 drawtext 参数转义问题
     let textfile = out.with_extension("disclaimer.txt");
     std::fs::write(&textfile, text)?;
@@ -140,14 +164,41 @@ pub fn concat_mp3(seg_files: &[impl AsRef<Path>], out: &Path) -> anyhow::Result<
 
 /// 静态图 + 音频合成视频（图片贯穿全片，时长 = 音频时长）；可选烧入字幕
 /// 字幕烧录字体名：按平台选择系统内置中文字体（避免 libass 找不到指定字体时随意 fallback）
-fn subtitle_font_name() -> &'static str {
+fn subtitle_font_name() -> String {
     if cfg!(target_os = "macos") {
-        "Hiragino Sans GB"
+        "Hiragino Sans GB".into()
     } else if cfg!(target_os = "windows") {
-        "Microsoft YaHei"
+        "Microsoft YaHei".into()
     } else {
-        "Noto Sans CJK SC"
+        // Linux：问 fontconfig 实际装了哪些中文字体族，优先 Noto，其次取第一个可用
+        cjk_family_via_fontconfig().unwrap_or_else(|| "Noto Sans CJK SC".into())
     }
+}
+
+/// 通过 fontconfig 查询已安装的中文字体族名（libass 在 Linux 上依赖 fontconfig 解析）
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+fn cjk_family_via_fontconfig() -> Option<String> {
+    let out = Command::new("fc-list").args([":lang=zh", "family"]).output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    // 每行形如 "Noto Sans CJK SC,Noto Sans CJK SC Regular"，取首个族名
+    let families: Vec<&str> = stdout
+        .lines()
+        .filter_map(|l| l.split(',').next().map(str::trim).filter(|s| !s.is_empty()))
+        .collect();
+    for pref in ["Noto Sans CJK SC", "WenQuanYi Zen Hei", "WenQuanYi Micro Hei"] {
+        if let Some(f) = families.iter().find(|f| **f == pref) {
+            return Some(f.to_string());
+        }
+    }
+    families.first().map(|f| f.to_string())
+}
+
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+fn cjk_family_via_fontconfig() -> Option<String> {
+    None
 }
 
 pub fn make_video(image: &Path, audio: &Path, subtitle: Option<&Path>, out: &Path) -> anyhow::Result<()> {

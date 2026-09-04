@@ -5,7 +5,7 @@ use std::convert::Infallible;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use axum::extract::{Path as AxPath, State};
+use axum::extract::{Path as AxPath, Query, State};
 use axum::http::header::{CONTENT_DISPOSITION, CONTENT_TYPE};
 use axum::http::StatusCode;
 use axum::response::sse::{Event as SseEvent, Sse};
@@ -429,7 +429,12 @@ async fn task_events(AxPath(id): AxPath<String>) -> Response {
     }
 }
 
-async fn download(AxPath((id, name)): AxPath<(String, String)>) -> Response {
+#[derive(Deserialize)]
+struct DownloadQ {
+    download: Option<String>,
+}
+
+async fn download(AxPath((id, name)): AxPath<(String, String)>, Query(q): Query<DownloadQ>) -> Response {
     if name.contains("..") || name.contains('/') || name.contains('\\') {
         return (StatusCode::BAD_REQUEST, "非法文件名").into_response();
     }
@@ -444,10 +449,16 @@ async fn download(AxPath((id, name)): AxPath<(String, String)>) -> Response {
                 Some("md") | Some("txt") => "text/plain; charset=utf-8",
                 _ => "application/octet-stream",
             };
+            // ?download=1 时强制下载（attachment），否则内联预览（inline）
+            let disposition = if q.download.is_some() {
+                format!("attachment; filename=\"{name}\"")
+            } else {
+                format!("inline; filename=\"{name}\"")
+            };
             (
                 [
                     (CONTENT_TYPE, ct),
-                    (CONTENT_DISPOSITION, &format!("inline; filename=\"{name}\"")[..]),
+                    (CONTENT_DISPOSITION, &disposition[..]),
                 ],
                 bytes,
             )
@@ -455,6 +466,62 @@ async fn download(AxPath((id, name)): AxPath<(String, String)>) -> Response {
         }
         Err(_) => (StatusCode::NOT_FOUND, "文件不存在").into_response(),
     }
+}
+
+/// 整包下载：把任务 output/<id>/ 下除 task.json 外的产物打成 zip 返回
+async fn archive(AxPath(id): AxPath<String>) -> Response {
+    let dir = Path::new(OUTPUT_ROOT).join(&id);
+    let files: Vec<(String, PathBuf)> = match std::fs::read_dir(&dir) {
+        Ok(entries) => entries
+            .flatten()
+            .filter(|e| e.path().is_file())
+            .filter(|e| e.file_name().to_string_lossy() != "task.json")
+            .map(|e| (e.file_name().to_string_lossy().to_string(), e.path()))
+            .collect(),
+        Err(_) => return (StatusCode::NOT_FOUND, "任务不存在").into_response(),
+    };
+    if files.is_empty() {
+        return (StatusCode::NOT_FOUND, "该任务还没有可下载的产物").into_response();
+    }
+
+    let mut buf = std::io::Cursor::new(Vec::new());
+    {
+        let mut zw = zip::ZipWriter::new(&mut buf);
+        for (name, path) in &files {
+            // mp3/mp4/图片已是压缩格式，Stored 免二次压缩省 CPU；文本类用 Deflated
+            let ext = name.rsplit('.').next().unwrap_or("");
+            let method = if matches!(ext, "mp4" | "mp3" | "png" | "jpg" | "jpeg") {
+                zip::CompressionMethod::Stored
+            } else {
+                zip::CompressionMethod::Deflated
+            };
+            let opts = zip::write::SimpleFileOptions::default().compression_method(method);
+            match std::fs::read(path) {
+                Ok(bytes) => {
+                    if zw.start_file(name, opts).is_err()
+                        || std::io::Write::write_all(&mut zw, &bytes).is_err()
+                    {
+                        return (StatusCode::INTERNAL_SERVER_ERROR, "打包失败").into_response();
+                    }
+                }
+                Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, format!("读取 {name} 失败")).into_response(),
+            }
+        }
+        if zw.finish().is_err() {
+            return (StatusCode::INTERNAL_SERVER_ERROR, "打包失败").into_response();
+        }
+    }
+
+    let short: String = id.chars().take(8).collect();
+    let fname = format!("media-factory-{short}.zip");
+    (
+        [
+            (CONTENT_TYPE, "application/zip"),
+            (CONTENT_DISPOSITION, &format!("attachment; filename=\"{fname}\"")[..]),
+        ],
+        buf.into_inner(),
+    )
+        .into_response()
 }
 
 /// 保存文本类中间产物（rewritten.md / script.md / subtitle.srt 等），供用户编辑后写回
@@ -597,6 +664,7 @@ pub async fn run(port: u16) -> anyhow::Result<()> {
         .route("/api/video", post(video))
         .route("/api/tasks", get(list_tasks).delete(clear_tasks))
         .route("/api/tasks/:id", get(task_info).delete(delete_task))
+        .route("/api/tasks/:id/archive", get(archive))
         .route("/api/tasks/:id/events", get(task_events))
         .route("/api/files/:id/:name", get(download).put(save_file))
         .route("/api/upload", post(upload))

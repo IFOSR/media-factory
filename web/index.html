@@ -29,7 +29,7 @@
   *{box-sizing:border-box;margin:0;padding:0}
   html,body{height:100%}
   body{background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.6;
-    display:flex;height:100vh;overflow:hidden;transition:background .25s,color .25s}
+    display:flex;height:100vh;height:100dvh;overflow:hidden;transition:background .25s,color .25s}
   ::-webkit-scrollbar{width:10px;height:10px}
   ::-webkit-scrollbar-thumb{background:var(--line2);border-radius:6px;border:2px solid var(--bg)}
   ::-webkit-scrollbar-track{background:transparent}
@@ -183,6 +183,9 @@
   .artifact .cap{font-family:var(--mono);font-size:11px;color:var(--accent);letter-spacing:.5px;
     margin-bottom:8px;display:flex;align-items:center;gap:8px}
   .artifact .cap .fname{color:var(--faint)}
+  .artifact .cap .dl{margin-left:auto;color:var(--accent);font-size:12px;padding:2px 8px;border-radius:6px;
+    border:1px solid var(--line);transition:all .15s;flex-shrink:0}
+  .artifact .cap .dl:hover{border-color:var(--accent-line);background:var(--accent-soft)}
   .artifact textarea,.artifact .txt{width:100%;background:var(--panel2);border:1px solid var(--line);
     border-radius:9px;padding:12px;font-size:13px;white-space:pre-wrap;max-height:340px;overflow:auto}
   .artifact textarea{font-family:inherit;resize:vertical;min-height:110px}
@@ -248,9 +251,43 @@
   .custom-form{margin-top:10px;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:13px}
   .cfg-body .mini{padding:5px 12px;font-size:12.5px}
 
+  /* ===== 移动端抽屉（默认隐藏，≤768px 启用） ===== */
+  #btnMenu{display:none}
+  #backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:50;opacity:0;
+    pointer-events:none;transition:opacity .25s}
+  body.sidebar-open #backdrop{opacity:1;pointer-events:auto}
+
   @media (max-width:900px){
     #sidebar{width:210px}
     #scroll{padding:18px 16px 60px}
+  }
+
+  @media (max-width:768px){
+    #btnMenu{display:inline-flex;align-items:center;justify-content:center;padding:6px 10px}
+    #sidebar{position:fixed;left:0;top:0;bottom:0;width:min(280px,84vw);z-index:60;
+      transform:translateX(-105%);transition:transform .25s ease;box-shadow:var(--shadow)}
+    body.sidebar-open #sidebar{transform:none}
+    #topbar{flex-wrap:wrap;padding:12px 14px;gap:10px}
+    #topbar .iconbtn{padding:7px 10px}
+    #status{flex-basis:100%;max-width:100%}
+    #scroll{padding:14px 12px calc(16px + env(safe-area-inset-bottom, 0px))}
+    /* 主操作区吸附屏幕最底部（sticky 贴滚动区域下边缘），自带实色背景遮挡下方滚动内容 */
+    #actionBar{position:sticky;bottom:0;background:var(--bg);margin:18px -12px 0;
+      padding:10px 12px calc(12px + env(safe-area-inset-bottom, 0px));border-top:1px solid var(--line);z-index:10}
+    #tlWrap{max-width:none}
+    .card-head{flex-wrap:wrap;padding:13px 14px}
+    .step-actions{flex-wrap:wrap}
+    .step-actions .btn-primary{width:100%;padding:11px 0}
+    #actionBar{flex-direction:column;align-items:stretch}
+    .step-row{padding-left:26px}
+    .step-row::before{left:6px}
+    .tl-dot{left:0}
+    .task-item .tdel{opacity:.6} /* 触屏无 hover，删除按钮常显 */
+    #lightbox img{max-width:94vw;max-height:80vh}
+    .artifact textarea{min-height:90px}
+    .artifact .cap .dl{padding:5px 12px} /* 触控目标 */
+    .overlay{align-items:flex-end;padding:0}
+    .cfg-modal{width:100%;max-width:100%;max-height:88vh;border-radius:14px 14px 0 0}
   }
 </style>
 </head>
@@ -271,9 +308,11 @@
   <!-- ===== 主区 ===== -->
   <main id="main">
     <header id="topbar">
+      <button class="iconbtn" id="btnMenu" onclick="toggleSidebar()" title="任务列表">☰</button>
       <div id="curTask"><span style="color:var(--muted)">未选择任务</span></div>
       <span class="spacer"></span>
       <div id="status"></div>
+      <button class="iconbtn" id="btnDlAll" onclick="downloadArchive()" style="display:none" title="打包下载该任务全部产物（zip）">⬇ 打包下载</button>
       <button class="iconbtn" id="btnRerunAll" onclick="rerunAll()" style="display:none">↻ 重跑全流程</button>
       <button class="iconbtn" onclick="toggleTheme()">🌓 主题</button>
       <button class="iconbtn" onclick="openConfig()">⚙ 配置</button>
@@ -292,6 +331,9 @@
 
   <!-- 灯箱 -->
   <div id="lightbox" onclick="this.classList.remove('show')"><img id="lightboxImg" alt="预览"></div>
+
+  <!-- 移动端抽屉遮罩 -->
+  <div id="backdrop" onclick="document.body.classList.remove('sidebar-open')"></div>
 
   <!-- 配置弹窗 -->
   <div class="overlay" id="cfgOverlay">
@@ -418,7 +460,7 @@ function stepInputPane(step){
     </div>
     <div class="hint">双人对话播客；留空音色则用配置默认。</div>`;
   if(step==='video') return `
-    <div class="hint" style="padding:4px 0">视频步骤自动使用上方配图与播客音频合成（含字幕），无需额外输入。待播客与配图就绪后执行。</div>`;
+    <div class="hint" style="padding:4px 0">视频步骤自动使用上方配图与播客音频合成（含字幕），无需额外输入。待播客与配图就绪后执行。成品生成后此处会出现「打包下载全部产物」。</div>`;
   return '';
 }
 
@@ -618,7 +660,7 @@ function appendLog(step,text){
 /* ============================================================
  * 产物渲染
  * ============================================================ */
-function renderArtifact(step,name,url){
+function renderArtifact(step,name,url,size){
   const meta=ARTIFACT_META[name]; if(!meta) return;
   const row=cardRow(meta.step); if(!row) return;
   const area=row.querySelector('.artifact-area'); if(!area) return;
@@ -629,13 +671,15 @@ function renderArtifact(step,name,url){
     box.dataset.artifact=name;
     area.appendChild(box);
   }
-  const cap=`<div class="cap">${meta.cap} <span class="fname">${name}</span></div>`;
+  const sizeTxt=(size!=null&&size>0)?` · ${fmtSize(size)}`:'';
+  const cap=`<div class="cap">${meta.cap} <span class="fname">${name}${sizeTxt}</span><a class="dl" href="${url}?download=1" download title="下载 ${name}">⬇ 下载</a></div>`;
   if(meta.kind==='image'){
     box.innerHTML=cap+`<img class="prev" src="${url}" onclick="openLightbox('${url}')">`;
   } else if(meta.kind==='audio'){
     box.innerHTML=cap+`<audio controls src="${url}"></audio>`;
   } else if(meta.kind==='video'){
-    box.innerHTML=cap+`<video controls src="${url}"></video>`;
+    box.innerHTML=cap+`<video controls src="${url}"></video>
+      <div class="frow" style="margin-top:10px"><button class="iconbtn" onclick="downloadArchive()">⬇ 打包下载全部产物（zip）</button></div>`;
   } else if(meta.kind==='text'){
     if(meta.editable){
       box.innerHTML=cap+`<textarea rows="9"></textarea>
@@ -703,6 +747,7 @@ async function run(step){
     state.currentId=taskId;
     state.title=null;
     updateCurTask(taskId,'运行中');
+    document.getElementById('btnDlAll').style.display='none'; // 重跑期间隐藏，待完成后重新出现
     // 切到运行视图：清空所有运行面板，按流程预设步骤状态
     enterRunView();
     const flow = step==='run' ? ['rewrite','image','podcast','video'] : [step];
@@ -740,9 +785,9 @@ function handleEvent(ev){
     }
     else if(ev.status==='failed'){ setCardState(ev.step,'failed'); }
   }
-  else if(ev.type==='artifact'){ renderArtifact(ev.step,ev.name,ev.url); }
+  else if(ev.type==='artifact'){ renderArtifact(ev.step,ev.name,ev.url,ev.size); }
   else if(ev.type==='task'){
-    if(ev.status==='done'){ setStatus('✓ 完成'); updateCurTask(state.currentId,'已完成'); }
+    if(ev.status==='done'){ setStatus('✓ 完成'); updateCurTask(state.currentId,'已完成'); document.getElementById('btnDlAll').style.display=''; }
     else if(ev.status==='failed'){ setStatus('✗ 失败：'+(ev.error||'未知'),true); updateCurTask(state.currentId,'失败'); }
     loadTasks();
   }
@@ -751,6 +796,21 @@ function handleEvent(ev){
 function updateCurTask(id,statusTxt){
   const t=state.title||id||'';
   document.getElementById('curTask').innerHTML=`<span>${esc(t)}</span><span class="tstatus">${esc(statusTxt||'')}</span>`;
+}
+
+/* 移动端抽屉 + 下载辅助 */
+function toggleSidebar(){ document.body.classList.toggle('sidebar-open'); }
+function closeSidebarMobile(){ if(window.innerWidth<=768) document.body.classList.remove('sidebar-open'); }
+function fmtSize(n){
+  if(n==null) return '';
+  if(n<1024) return n+' B';
+  if(n<1048576) return (n/1024).toFixed(1)+' KB';
+  if(n<1073741824) return (n/1048576).toFixed(1)+' MB';
+  return (n/1073741824).toFixed(2)+' GB';
+}
+function downloadArchive(){
+  if(!state.currentId){ setStatus('请先选择任务',true); return; }
+  window.location.href='/api/tasks/'+state.currentId+'/archive';
 }
 
 /* 回放（建立 SSE 前 / 历史任务） */
@@ -767,7 +827,7 @@ function replayTask(t){
   }
   for(const a of (t.artifacts||[])){
     const m=ARTIFACT_META[a.name];
-    if(m) renderArtifact(m.step,a.name,a.url);
+    if(m) renderArtifact(m.step,a.name,a.url,a.size);
   }
   if(t.status==='failed') setStatus('✗ 失败：'+(t.error||'未知'),true);
   // 回放会重置徽章，这里恢复「上游已更新」提示
@@ -789,6 +849,7 @@ function newTask(){
   state.params=null;
   state.stale=[];
   document.getElementById('btnRerunAll').style.display='none';
+  document.getElementById('btnDlAll').style.display='none';
   state.refImages=[];
   renderTimeline();
   renderRefImages();
@@ -860,7 +921,10 @@ async function loadTask(id){
     state.params=t.params||null;
     state.stale=[];
     document.getElementById('btnRerunAll').style.display='';
+    // 整包下载只在任务完成且有产物时出现
+    document.getElementById('btnDlAll').style.display=(t.status==='done'&&(t.artifacts||[]).length)?'':'none';
     updateCurTask(id, t.status==='running'?'运行中':(t.status==='done'?'已完成':(t.status==='failed'?'失败':'')));
+    closeSidebarMobile();
     replayTask(t);
     // 展开有内容的卡片，折叠空的
     for(const s of STEPS){
