@@ -106,7 +106,7 @@ media-factory serve       # Web 服务（后台运行；--port 指定端口，--
 ## 配置（`~/.media-factory/config.yaml`）
 
 - **语言模型**：默认 `pi`（用 `pi auth login` 认证，模型由 pi 管理）；或自定义 OpenAI 兼容 provider（如 Deepseek：填 BaseURL + API Key + 模型）
-- **生图**：`nano-banana`（官方 Gemini，默认）/ `openai-image`（gpt-image）/ 自定义 OpenAI 兼容（如 ModelGate）
+- **生图**：`nano-banana`（官方 Gemini，默认）/ `openai-image`（gpt-image）/ `doubao-seedream`（豆包 Seedream 4.0，方舟 Ark：支持多图参考、真实 9:16/16:9、自动关水印，可填模型名或 ep- 端点）/ 自定义 OpenAI 兼容（如 ModelGate）
 - **播客**：`volc-podcast`（火山语音播客大模型，推荐；需 Access Token + appid，[控制台开通](https://console.volcengine.com/speech/service/10028)）/ 通用 TTS（openai-tts 等，自动生成脚本→分段合成→拼接）
   - 火山播客为**双人对话**模型（说话人随机开场，角色自动识别）
 

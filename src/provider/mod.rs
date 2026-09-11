@@ -136,6 +136,10 @@ pub struct OpenAiImages {
     pub model: String,
     pub supports_reference: bool,
     pub extra_body: serde_json::Map<String, serde_json::Value>,
+    /// 参考图以数组形式发送（豆包 Seedream 的 image: [url, ...] 格式）
+    pub image_as_array: bool,
+    /// 自定义尺寸映射（square/portrait/landscape），None 时用 OpenAI 默认尺寸
+    pub size_map: Option<[String; 3]>,
     client: reqwest::Client,
 }
 
@@ -153,8 +157,24 @@ impl OpenAiImages {
             model,
             supports_reference,
             extra_body,
+            image_as_array: false,
+            size_map: None,
             client: reqwest::Client::builder().no_proxy().build().unwrap(),
         }
+    }
+
+    /// 参考图用数组格式（Seedream 系列多图参考）
+    #[allow(dead_code)]
+    pub fn with_image_array(mut self) -> Self {
+        self.image_as_array = true;
+        self
+    }
+
+    /// 覆盖尺寸映射：[square, portrait, landscape]
+    #[allow(dead_code)]
+    pub fn with_size_map(mut self, map: [String; 3]) -> Self {
+        self.size_map = Some(map);
+        self
     }
 
     async fn fetch_url(&self, url: &str) -> anyhow::Result<Vec<u8>> {
@@ -174,10 +194,13 @@ impl ImageProvider for OpenAiImages {
         let mut body = serde_json::Map::new();
         body.insert("model".into(), self.model.clone().into());
         body.insert("prompt".into(), req.prompt.clone().into());
-        let size = match req.size {
-            ImageSize::Square => "1024x1024",
-            ImageSize::Portrait => "1024x1536",
-            ImageSize::Landscape => "1536x1024",
+        let size = match (&self.size_map, req.size) {
+            (Some(m), ImageSize::Square) => m[0].clone(),
+            (Some(m), ImageSize::Portrait) => m[1].clone(),
+            (Some(m), ImageSize::Landscape) => m[2].clone(),
+            (None, ImageSize::Square) => "1024x1024".into(),
+            (None, ImageSize::Portrait) => "1024x1536".into(),
+            (None, ImageSize::Landscape) => "1536x1024".into(),
         };
         body.insert("size".into(), size.into());
         for (k, v) in &self.extra_body {
@@ -185,8 +208,21 @@ impl ImageProvider for OpenAiImages {
         }
 
         if self.supports_reference {
-            // OpenAI 兼容接口一般只支持单张参考图；多张时取第一张
-            if let Some(ref_path) = req.reference_images.first() {
+            // 参考图：Seedream 用数组（多图参考），其余 OpenAI 兼容接口用单图字符串
+            if self.image_as_array {
+                if !req.reference_images.is_empty() {
+                    let mut urls = Vec::with_capacity(req.reference_images.len());
+                    for p in &req.reference_images {
+                        let bytes = std::fs::read(p)
+                            .map_err(|e| anyhow::anyhow!("读取参考图 {}: {e}", p.display()))?;
+                        urls.push(format!(
+                            "data:image/png;base64,{}",
+                            base64::engine::general_purpose::STANDARD.encode(bytes)
+                        ));
+                    }
+                    body.insert("image".into(), urls.into());
+                }
+            } else if let Some(ref_path) = req.reference_images.first() {
                 let bytes = std::fs::read(ref_path)?;
                 let data_url = format!(
                     "data:image/png;base64,{}",
@@ -275,7 +311,29 @@ pub fn resolve_image(cfg: &Config) -> anyhow::Result<Box<dyn ImageProvider>> {
                 serde_json::Map::new(),
             ))),
             BuiltinKind::DoubaoSeedream => {
-                anyhow::bail!("doubao-seedream（豆包生图）暂未实现，请换用其他生图 provider")
+                // 火山方舟 Ark 的 images/generations 为 OpenAI 兼容格式；
+                // Seedream 4.0 支持 image 数组多图参考、显式尺寸、watermark 开关
+                let model = extra
+                    .get("model")
+                    .cloned()
+                    .unwrap_or_else(|| "doubao-seedream-4-0-250828".into());
+                let mut extra_body = serde_json::Map::new();
+                extra_body.insert("watermark".into(), false.into());
+                Ok(Box::new(
+                    OpenAiImages::new(
+                        "https://ark.cn-beijing.volces.com/api/v3".into(),
+                        api_key.clone(),
+                        model,
+                        true,
+                        extra_body,
+                    )
+                    .with_image_array()
+                    .with_size_map([
+                        "1024x1024".into(),
+                        "1080x1920".into(), // 真实 9:16 手机竖屏
+                        "1920x1080".into(), // 真实 16:9 横屏
+                    ]),
+                ))
             }
             other => anyhow::bail!("provider {:?} 不支持生图任务", other),
         },
@@ -409,5 +467,68 @@ mod tests {
         );
         let p = resolve_image(&cfg).unwrap();
         assert!(p.supports_reference());
+    }
+}
+
+#[cfg(test)]
+mod seedream_tests {
+    use super::*;
+
+    fn png() -> Vec<u8> { b"PNGDATA-SEEDREAM".to_vec() }
+
+    #[test]
+    fn seedream_resolve_defaults() {
+        let mut cfg = Config::default();
+        cfg.tasks.image = Some(crate::config::TaskSelection { provider: "doubao-seedream".into() });
+        cfg.providers.insert("doubao-seedream".into(), ProviderConfig::Builtin {
+            kind: BuiltinKind::DoubaoSeedream,
+            api_key: "ark-key".into(),
+            extra: Default::default(),
+        });
+        let p = resolve_image(&cfg).unwrap();
+        assert!(p.supports_reference());
+    }
+
+    #[tokio::test]
+    async fn seedream_payload_array_image_watermark_and_size() {
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .and(wiremock::matchers::path("/images/generations"))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": [{"url": format!("{}/img.png", server.uri())}]
+            })))
+            .mount(&server)
+            .await;
+        // 图片下载也 mock
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/img.png"))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_bytes(png()))
+            .mount(&server)
+            .await;
+
+        let dir = tempfile::tempdir().unwrap();
+        let ref1 = dir.path().join("a.png"); std::fs::write(&ref1, png()).unwrap();
+        let ref2 = dir.path().join("b.png"); std::fs::write(&ref2, png()).unwrap();
+
+        let p = OpenAiImages::new(server.uri(), "k".into(), "doubao-seedream-4-0-250828".into(), true, {
+            let mut m = serde_json::Map::new(); m.insert("watermark".into(), false.into()); m
+        })
+        .with_image_array()
+        .with_size_map(["1024x1024".into(), "1080x1920".into(), "1920x1080".into()]);
+
+        let bytes = p.generate(&ImageRequest {
+            prompt: "一只猫".into(),
+            reference_images: vec![ref1, ref2],
+            size: ImageSize::Portrait,
+        }).await.unwrap();
+        assert_eq!(bytes, png());
+
+        let reqs = server.received_requests().await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(
+            &reqs.iter().find(|r| r.method == "POST").unwrap().body).unwrap();
+        assert_eq!(body["model"], "doubao-seedream-4-0-250828");
+        assert_eq!(body["size"], "1080x1920");              // 真实 9:16
+        assert_eq!(body["watermark"], false);               // 关水印
+        assert_eq!(body["image"].as_array().unwrap().len(), 2); // 多图参考（数组）
     }
 }

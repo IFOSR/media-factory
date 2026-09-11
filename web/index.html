@@ -944,7 +944,7 @@ const LLM_BUILTINS=[{key:'pi',label:'pi（pi agent，默认）'}];
 const IMAGE_BUILTINS=[
   {key:'nano-banana',label:'nano-banana（官方 Gemini 生图）'},
   {key:'openai-image',label:'openai-image（gpt-image）'},
-  {key:'doubao-seedream',label:'doubao-seedream（豆包生图）'},
+  {key:'doubao-seedream',label:'doubao-seedream（豆包 Seedream，方舟 Ark）',extra:['model']},
 ];
 const PODCAST_BUILTINS=[
   {key:'volc-podcast',label:'volc-podcast（火山播客大模型，双人对话）',extra:['appid','speaker1','speaker2']},
@@ -1028,7 +1028,11 @@ function renderProviderFields(){
         html+=`<div style="margin-bottom:10px"><label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">${ek==='speaker1'?'主持人音色':'嘉宾音色'}</label><select id="pm_${ek}">${opts}</select></div>`;
         setTimeout(()=>{ document.getElementById('pm_'+ek).value=cur; },0);
       } else {
-        html+=pmField(ek.toUpperCase(),'pm_'+ek,p?.extra?.[ek]||'',false);
+        if(ek==='model'){
+          html+=`<div style="margin-bottom:10px"><label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">模型（Seedream 版本或 ep- 端点 ID）</label><input type="text" id="pm_model" placeholder="doubao-seedream-4-0-250828（留空用默认）" value="${esc(p?.extra?.model||'')}"></div>`;
+        } else {
+          html+=pmField(ek.toUpperCase(),'pm_'+ek,p?.extra?.[ek]||'',false);
+        }
       }
     }
   } else {

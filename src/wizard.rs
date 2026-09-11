@@ -90,6 +90,7 @@ fn builtin_extra_keys(kind: BuiltinKind) -> &'static [&'static str] {
     match kind {
         BuiltinKind::VolcPodcast => &["appid"],
         BuiltinKind::VolcTts => &["appid", "cluster"],
+        BuiltinKind::DoubaoSeedream => &["model"],
         _ => &[],
     }
 }

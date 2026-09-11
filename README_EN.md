@@ -106,7 +106,7 @@ Resume after failure: `media-factory podcast --id <task-id>` (upstream artifacts
 ## Configuration (`~/.media-factory/config.yaml`)
 
 - **LLM**: default `pi` (authenticate with `pi auth login`); or any OpenAI-compatible provider (e.g. Deepseek: BaseURL + API key + model)
-- **Image**: `nano-banana` (official Gemini, default) / `openai-image` (gpt-image) / custom OpenAI-compatible
+- **Image**: `nano-banana` (official Gemini, default) / `openai-image` (gpt-image) / `doubao-seedream` (Doubao Seedream 4.0 via Ark: multi-image reference, true 9:16/16:9, watermark off; model name or ep- endpoint) / custom OpenAI-compatible
 - **Podcast**: `volc-podcast` (Volcano Podcast TTS, recommended; needs Access Token + appid from the [console](https://console.volcengine.com/speech/service/10028)) / generic TTS (openai-tts etc.: script → per-turn synthesis → concat)
   - The Volcano model is a **two-host dialogue** model (random opening speaker, roles auto-detected)
 
