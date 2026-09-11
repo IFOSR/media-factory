@@ -8,7 +8,7 @@ use crate::task::{Step, TaskEvents};
 use crate::tts::TtsProvider;
 
 fn script_prompt_template() -> String {
-    if let Ok(t) = std::fs::read_to_string("prompts/podcast_script.txt") {
+    if let Ok(t) = std::fs::read_to_string(crate::config::data_dir().join("prompts/podcast_script.txt")) {
         return t;
     }
     include_str!("../../prompts/podcast_script.txt").to_string()
@@ -212,8 +212,8 @@ pub async fn run(
     user_prompt: Option<String>,
 ) -> anyhow::Result<String> {
     let dir = match &id {
-        Some(i) => super::task_dir(Path::new("output"), i),
-        None => super::latest_task_dir(Path::new("output"))?,
+        Some(i) => super::task_dir(crate::config::output_root().as_path(), i),
+        None => super::latest_task_dir(crate::config::output_root().as_path())?,
     };
     let id = dir
         .file_name()
@@ -222,7 +222,7 @@ pub async fn run(
     let cfg = Config::load(&Config::path())?;
     let llm = crate::llm::resolve_llm(&cfg)?;
     let backend = podcast::resolve_podcast(&cfg)?;
-    let events = crate::task::TaskEvents::local(Path::new("output"), &id);
+    let events = crate::task::TaskEvents::local(crate::config::output_root().as_path(), &id);
     run_with(&dir, llm.as_ref(), &backend, force_script, user_prompt.as_deref(), &events).await?;
     Ok(id)
 }

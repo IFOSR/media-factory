@@ -25,7 +25,7 @@ use crate::provider;
 use crate::task::TaskEvents;
 use crate::wizard;
 
-const OUTPUT_ROOT: &str = "output";
+fn output_root() -> std::path::PathBuf { crate::config::output_root() }
 
 #[derive(Clone)]
 struct AppState {
@@ -116,7 +116,7 @@ fn load_ctx() -> anyhow::Result<(Config, Box<dyn crate::llm::LlmAgent>)> {
 }
 
 fn list_artifacts(id: &str) -> Vec<Artifact> {
-    let dir = Path::new(OUTPUT_ROOT).join(id);
+    let dir = output_root().as_path().join(id);
     let mut arts = Vec::new();
     if let Ok(entries) = std::fs::read_dir(&dir) {
         for e in entries.flatten() {
@@ -132,7 +132,7 @@ fn list_artifacts(id: &str) -> Vec<Artifact> {
 }
 
 fn task_meta_json(id: &str) -> serde_json::Value {
-    let p = Path::new(OUTPUT_ROOT).join(id).join("task.json");
+    let p = output_root().as_path().join(id).join("task.json");
     std::fs::read_to_string(&p)
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok())
@@ -143,8 +143,8 @@ fn task_meta_json(id: &str) -> serde_json::Value {
 
 fn resolve_dir(id: Option<String>) -> anyhow::Result<PathBuf> {
     match id {
-        Some(i) => Ok(cmd::task_dir(Path::new(OUTPUT_ROOT), &i)),
-        None => cmd::latest_task_dir(Path::new(OUTPUT_ROOT)),
+        Some(i) => Ok(cmd::task_dir(output_root().as_path(), &i)),
+        None => cmd::latest_task_dir(output_root().as_path()),
     }
 }
 
@@ -184,7 +184,7 @@ async fn run_pipeline(State(state): State<AppState>, Json(req): Json<RunReq>) ->
         Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"ok": false, "error": e.to_string()}))).into_response(),
     };
     let id = req.id.clone().unwrap_or_else(gen_id);
-    let events = TaskEvents::streaming(Path::new(OUTPUT_ROOT), &id);
+    let events = TaskEvents::streaming(output_root().as_path(), &id);
     events.init();
     // 持久化各步骤执行参数（重跑预填用）
     events.set_step_params("rewrite", json!({"text": req.text, "prompt": req.prompt}));
@@ -205,7 +205,7 @@ async fn run_pipeline(State(state): State<AppState>, Json(req): Json<RunReq>) ->
         let size = req.size.as_deref().map(crate::provider::ImageSize::parse).unwrap_or_default();
         // run_with_config 内部已处理 task_done / task_error
         let _ = cmd::run::run_with_config(
-            Path::new(OUTPUT_ROOT),
+            output_root().as_path(),
             &cfg,
             llm.as_ref(),
             &req.text,
@@ -229,14 +229,14 @@ async fn rewrite(State(state): State<AppState>, Json(req): Json<RewriteReq>) -> 
         Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"ok": false, "error": e.to_string()}))).into_response(),
     };
     let id = req.id.clone().unwrap_or_else(gen_id);
-    let events = TaskEvents::streaming(Path::new(OUTPUT_ROOT), &id);
+    let events = TaskEvents::streaming(output_root().as_path(), &id);
     events.init();
     events.set_step_params("rewrite", json!({"text": req.text.clone(), "prompt": req.prompt.clone()}));
     let lock = state.run_lock.clone();
     let id2 = id.clone();
     tokio::spawn(async move {
         let _guard = lock.lock().await;
-        let r = cmd::rewrite::run_with(Path::new(OUTPUT_ROOT), &req.text, &id2, llm.as_ref(), req.prompt.as_deref(), &events).await;
+        let r = cmd::rewrite::run_with(output_root().as_path(), &req.text, &id2, llm.as_ref(), req.prompt.as_deref(), &events).await;
         match r {
             Ok(_) => events.task_done(),
             Err(e) => {
@@ -262,7 +262,7 @@ async fn image(State(state): State<AppState>, Json(req): Json<ImageReq>) -> Resp
         Ok(p) => p,
         Err(e) => return (StatusCode::BAD_REQUEST, Json(json!({"ok": false, "error": e.to_string()}))).into_response(),
     };
-    let events = TaskEvents::streaming(Path::new(OUTPUT_ROOT), &id);
+    let events = TaskEvents::streaming(output_root().as_path(), &id);
     events.set_step_params("image", json!({"prompt": req.prompt.clone(), "size": req.size.clone(), "disclaimer": req.disclaimer, "ref_images": req.ref_images.clone()}));
     let lock = state.run_lock.clone();
     tokio::spawn(async move {
@@ -298,7 +298,7 @@ async fn podcast(State(state): State<AppState>, Json(req): Json<PodcastReq>) -> 
     let sp2 = req.speaker2.clone();
     let speakers = build_speakers(req.speaker1, req.speaker2);
     let backend = apply_speakers(backend, speakers);
-    let events = TaskEvents::streaming(Path::new(OUTPUT_ROOT), &id);
+    let events = TaskEvents::streaming(output_root().as_path(), &id);
     events.set_step_params("podcast", json!({"prompt": req.prompt.clone(), "speaker1": sp1, "speaker2": sp2}));
     let lock = state.run_lock.clone();
     tokio::spawn(async move {
@@ -321,7 +321,7 @@ async fn video(State(state): State<AppState>, Json(req): Json<VideoReq>) -> Resp
         Err(e) => return (StatusCode::BAD_REQUEST, Json(json!({"ok": false, "error": e.to_string()}))).into_response(),
     };
     let id = dir_id(&dir);
-    let events = TaskEvents::streaming(Path::new(OUTPUT_ROOT), &id);
+    let events = TaskEvents::streaming(output_root().as_path(), &id);
     events.set_step_params("video", json!({}));
     let lock = state.run_lock.clone();
     tokio::spawn(async move {
@@ -348,7 +348,7 @@ async fn video(State(state): State<AppState>, Json(req): Json<VideoReq>) -> Resp
 
 async fn list_tasks() -> Response {
     let mut tasks = Vec::new();
-    if let Ok(entries) = std::fs::read_dir(OUTPUT_ROOT) {
+    if let Ok(entries) = std::fs::read_dir(output_root()) {
         for e in entries.flatten() {
             if e.path().is_dir() {
                 let id = e.file_name().to_string_lossy().to_string();
@@ -369,7 +369,7 @@ async fn delete_task(AxPath(id): AxPath<String>) -> Response {
     if id.contains("..") || id.contains('/') || id.contains('\\') {
         return (StatusCode::BAD_REQUEST, Json(json!({"ok": false, "error": "非法任务 id"}))).into_response();
     }
-    let dir = Path::new(OUTPUT_ROOT).join(&id);
+    let dir = output_root().as_path().join(&id);
     let _ = std::fs::remove_dir_all(&dir); // 目录不存在也忽略
     crate::task::drop_channel(&id);
     Json(json!({"ok": true})).into_response()
@@ -377,7 +377,7 @@ async fn delete_task(AxPath(id): AxPath<String>) -> Response {
 
 /// 清空所有历史任务（保留 _ 开头的系统目录）
 async fn clear_tasks() -> Response {
-    if let Ok(entries) = std::fs::read_dir(OUTPUT_ROOT) {
+    if let Ok(entries) = std::fs::read_dir(output_root()) {
         for e in entries.flatten() {
             if e.path().is_dir() {
                 let id = e.file_name().to_string_lossy().to_string();
@@ -438,7 +438,7 @@ async fn download(AxPath((id, name)): AxPath<(String, String)>, Query(q): Query<
     if name.contains("..") || name.contains('/') || name.contains('\\') {
         return (StatusCode::BAD_REQUEST, "非法文件名").into_response();
     }
-    let path = Path::new(OUTPUT_ROOT).join(&id).join(&name);
+    let path = output_root().as_path().join(&id).join(&name);
     match std::fs::read(&path) {
         Ok(bytes) => {
             let ct = match name.rsplit('.').next() {
@@ -470,7 +470,7 @@ async fn download(AxPath((id, name)): AxPath<(String, String)>, Query(q): Query<
 
 /// 整包下载：把任务 output/<id>/ 下除 task.json 外的产物打成 zip 返回
 async fn archive(AxPath(id): AxPath<String>) -> Response {
-    let dir = Path::new(OUTPUT_ROOT).join(&id);
+    let dir = output_root().as_path().join(&id);
     let files: Vec<(String, PathBuf)> = match std::fs::read_dir(&dir) {
         Ok(entries) => entries
             .flatten()
@@ -533,7 +533,7 @@ async fn save_file(AxPath((id, name)): AxPath<(String, String)>, Json(req): Json
     if !matches!(ext, "md" | "txt" | "srt") {
         return (StatusCode::BAD_REQUEST, Json(json!({"ok": false, "error": "该文件类型不可编辑"}))).into_response();
     }
-    let path = Path::new(OUTPUT_ROOT).join(&id).join(&name);
+    let path = output_root().as_path().join(&id).join(&name);
     match std::fs::write(&path, &req.content) {
         Ok(()) => Json(json!({"ok": true})).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"ok": false, "error": e.to_string()}))).into_response(),
@@ -562,8 +562,8 @@ async fn upload(mut multipart: axum::extract::Multipart) -> Response {
                 .take(60)
                 .collect();
             let ts = chrono::Local::now().format("%Y%m%d-%H%M%S");
-            let dir = Path::new("uploads");
-            std::fs::create_dir_all(dir)?;
+            let dir = crate::config::uploads_dir();
+            std::fs::create_dir_all(&dir)?;
             let path = dir.join(format!("{ts}-{safe}.{ext}"));
             std::fs::write(&path, &data)?;
             let full = path.canonicalize()?.to_string_lossy().to_string();

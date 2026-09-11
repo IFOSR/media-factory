@@ -41,14 +41,14 @@ pub fn run_with(dir: &Path, events: &TaskEvents) -> anyhow::Result<()> {
 
 pub fn run(id: Option<String>) -> anyhow::Result<String> {
     let dir = match &id {
-        Some(i) => super::task_dir(Path::new("output"), i),
-        None => super::latest_task_dir(Path::new("output"))?,
+        Some(i) => super::task_dir(crate::config::output_root().as_path(), i),
+        None => super::latest_task_dir(crate::config::output_root().as_path())?,
     };
     let id = dir
         .file_name()
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_default();
-    let events = crate::task::TaskEvents::local(Path::new("output"), &id);
+    let events = crate::task::TaskEvents::local(crate::config::output_root().as_path(), &id);
     run_with(&dir, &events)?;
     Ok(id)
 }

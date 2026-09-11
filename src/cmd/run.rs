@@ -31,7 +31,7 @@ pub async fn run(
     let llm = crate::llm::resolve_llm(&cfg)?;
     let source = rewrite::read_input(input)?;
     let id = id.unwrap_or_else(rewrite::gen_task_id);
-    let events = TaskEvents::local(Path::new("output"), &id);
+    let events = TaskEvents::local(crate::config::output_root().as_path(), &id);
     events.init();
     let prompts = Prompts {
         rewrite: rewrite_prompt.as_deref(),
@@ -40,7 +40,7 @@ pub async fn run(
     };
     let size = size.as_deref().map(provider::ImageSize::parse).unwrap_or_default();
     run_with_config(
-        Path::new("output"),
+        crate::config::output_root().as_path(),
         &cfg,
         llm.as_ref(),
         &source,

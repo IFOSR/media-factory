@@ -7,7 +7,7 @@ use crate::task::{Step, TaskEvents};
 
 /// 读取图像 prompt 模板：优先运行时读 cwd/prompts/image_prompt.txt，缺失用嵌入默认。
 fn image_prompt_template() -> String {
-    if let Ok(t) = std::fs::read_to_string("prompts/image_prompt.txt") {
+    if let Ok(t) = std::fs::read_to_string(crate::config::data_dir().join("prompts/image_prompt.txt")) {
         return t;
     }
     include_str!("../../prompts/image_prompt.txt").to_string()
@@ -108,8 +108,8 @@ pub async fn run(
     size: Option<String>,
 ) -> anyhow::Result<String> {
     let dir = match &id {
-        Some(i) => super::task_dir(Path::new("output"), i),
-        None => super::latest_task_dir(Path::new("output"))?,
+        Some(i) => super::task_dir(crate::config::output_root().as_path(), i),
+        None => super::latest_task_dir(crate::config::output_root().as_path())?,
     };
     let id = dir
         .file_name()
@@ -119,7 +119,7 @@ pub async fn run(
     let cfg = Config::load(&Config::path())?;
     let llm = crate::llm::resolve_llm(&cfg)?;
     let provider = provider::resolve_image(&cfg)?;
-    let events = crate::task::TaskEvents::local(Path::new("output"), &id);
+    let events = crate::task::TaskEvents::local(crate::config::output_root().as_path(), &id);
     let size = size.as_deref().map(provider::ImageSize::parse).unwrap_or_default();
     run_with(&dir, reference, llm.as_ref(), provider.as_ref(), user_prompt.as_deref(), &events, disclaimer, size).await?;
     Ok(id)

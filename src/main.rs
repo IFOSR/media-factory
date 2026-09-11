@@ -106,6 +106,7 @@ fn require_pi() -> anyhow::Result<()> {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
+    migrate_legacy_data();
 
     // 前置检查：除 config 和 serve 管理动作外都需要 pi；video/run 需要 ffmpeg
     let needs_pi = !matches!(&cli.command, Commands::Config)
@@ -150,4 +151,36 @@ async fn main() -> anyhow::Result<()> {
         }
     }
     Ok(())
+}
+
+/// 一次性数据迁移：旧版把 output/ 与 uploads/ 写在项目 cwd 下；新版统一锚定
+/// ~/.media-factory/。若数据目录尚无对应子目录而 cwd 下存在旧目录，则整体搬入。
+/// （在 daemon chdir 之前执行，cwd 仍是用户调用目录）
+fn migrate_legacy_data() {
+    let pairs = [
+        (std::path::Path::new("output"), crate::config::output_root()),
+        (std::path::Path::new("uploads"), crate::config::uploads_dir()),
+    ];
+    for (legacy, target) in pairs {
+        // 仅当旧目录有内容、且目标是空的（不存在或空目录，daemon 曾建过空目录）才迁移
+        let legacy_nonempty = std::fs::read_dir(legacy).map(|mut d| d.next().is_some()).unwrap_or(false);
+        let target_empty = std::fs::read_dir(&target).map(|mut d| d.next().is_none()).unwrap_or(true);
+        if legacy_nonempty && target_empty {
+            if target.exists() {
+                let _ = std::fs::remove_dir(&target); // 目标是空目录，安全移除
+            }
+            if let Some(parent) = target.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            match std::fs::rename(legacy, &target) {
+                Ok(()) => println!("✓ 已迁移 {} → {}", legacy.display(), target.display()),
+                Err(_) => {
+                    // rename 跨盘失败时退化为复制
+                    if std::fs::rename(legacy, legacy.with_extension("migrated-legacy")).is_ok() {
+                        println!("⚠ 自动迁移 {} 失败（跨盘？），旧目录已改名为 *.migrated-legacy，可手动移动到 {}", legacy.display(), target.display());
+                    }
+                }
+            }
+        }
+    }
 }

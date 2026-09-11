@@ -1,4 +1,17 @@
 use serde::{Deserialize, Serialize};
+
+/// 数据目录：配置 / 产物 / 上传的统一锚点（~/.media-factory，与 cwd 无关）
+pub fn data_dir() -> PathBuf {
+    dirs::home_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(".media-factory")
+}
+pub fn output_root() -> PathBuf {
+    data_dir().join("output")
+}
+pub fn uploads_dir() -> PathBuf {
+    data_dir().join("uploads")
+}
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -108,10 +121,7 @@ pub enum TaskKind {
 
 impl Config {
     pub fn path() -> PathBuf {
-        dirs::home_dir()
-            .unwrap()
-            .join(".media-factory")
-            .join("config.yaml")
+        data_dir().join("config.yaml")
     }
 
     pub fn load(path: &Path) -> anyhow::Result<Self> {
