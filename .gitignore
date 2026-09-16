@@ -3,3 +3,7 @@
 /output/
 /uploads/
 /logs/
+
+# 构建产物（不提交二进制）
+/dist/
+scripts/render-worker/media-factory

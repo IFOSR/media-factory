@@ -1,3 +1,4 @@
+pub mod scenes;
 pub mod image;
 pub mod podcast;
 pub mod rewrite;

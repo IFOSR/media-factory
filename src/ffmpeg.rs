@@ -264,3 +264,75 @@ mod tests {
         assert!(std::fs::metadata(&out).unwrap().len() > 0);
     }
 }
+
+/// 统一的滤镜参数转义（subtitles / drawtext 用）
+fn escape_filter_path(p: &Path) -> String {
+    p.to_string_lossy().replace('\\', "/").replace(':', "\\:").replace('\'', "\\'")
+}
+
+/// 合成成品视频：视觉层（动态画面或静态图）+ 音频 [+ 字幕烧录] [+ 常驻免责声明]
+///
+/// - `visual`：视觉层视频（动态模式）或静态图片（封面模式）
+/// - `subtitle`：可选 SRT（烧录）
+/// - `disclaimer`：可选免责声明（全程常驻，叠加在右上角）
+/// - `font_px`：免责声明字号（按输出宽度换算）
+pub fn mux_video(
+    visual: &Path,
+    audio: &Path,
+    subtitle: Option<&Path>,
+    disclaimer: Option<&str>,
+    font_px: u32,
+    out: &Path,
+) -> anyhow::Result<()> {
+    let mut filters: Vec<String> = Vec::new();
+
+    if let Some(srt) = subtitle {
+        anyhow::ensure!(
+            has_subtitles_filter(),
+            "当前 ffmpeg 未编译 libass，无法烧录字幕。\n请安装带 libass 的 ffmpeg"
+        );
+        filters.push(format!(
+            "subtitles='{}':force_style='FontName={},FontSize=13,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2,Shadow=0,BorderStyle=1,Alignment=2,MarginV=40,WrapStyle=0'",
+            escape_filter_path(srt),
+            subtitle_font_name()
+        ));
+    }
+
+    let mut disc_text_file: Option<PathBuf> = None;
+    if let Some(text) = disclaimer.map(str::trim).filter(|t| !t.is_empty()) {
+        let font = find_cjk_font()
+            .ok_or_else(|| anyhow::anyhow!("未找到中文字体，无法叠加免责声明（Linux 可装 fonts-noto-cjk）"))?;
+        let textfile = out.with_extension("disclaimer.txt");
+        std::fs::write(&textfile, text)?;
+        let margin = (font_px / 2).max(10);
+        filters.push(format!(
+            "drawtext=fontfile='{}':textfile='{}':fontcolor=yellow:fontsize={}:borderw=2:bordercolor=black@0.8:x=w-text_w-{}:y={}",
+            escape_filter_path(&font),
+            escape_filter_path(&textfile),
+            font_px,
+            margin,
+            margin
+        ));
+        disc_text_file = Some(textfile);
+    }
+
+    let mut cmd = Command::new(ffmpeg_bin());
+    cmd.args(["-y", "-i"]).arg(visual).arg("-i").arg(audio);
+    if !filters.is_empty() {
+        cmd.args(["-vf", &filters.join(",")]);
+    }
+    cmd.args([
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+        "-pix_fmt", "yuv420p",
+        "-c:a", "aac", "-b:a", "192k",
+        "-shortest",
+    ])
+    .arg(out);
+
+    let status = cmd.status()?;
+    if let Some(f) = disc_text_file {
+        let _ = std::fs::remove_file(f);
+    }
+    anyhow::ensure!(status.success(), "ffmpeg 合成失败");
+    Ok(())
+}

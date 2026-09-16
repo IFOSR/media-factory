@@ -19,6 +19,8 @@ pub enum Step {
     Rewrite,
     Image,
     Podcast,
+    /// 分镜：由字幕时间轴生成 scene.json（动态解释画面）
+    Scenes,
     Video,
 }
 
@@ -28,6 +30,7 @@ impl Step {
             Step::Rewrite => "rewrite",
             Step::Image => "image",
             Step::Podcast => "podcast",
+            Step::Scenes => "scenes",
             Step::Video => "video",
         }
     }
@@ -37,12 +40,13 @@ impl Step {
             "rewrite" => Some(Step::Rewrite),
             "image" => Some(Step::Image),
             "podcast" => Some(Step::Podcast),
+            "scenes" => Some(Step::Scenes),
             "video" => Some(Step::Video),
             _ => None,
         }
     }
-    pub fn all() -> [Step; 4] {
-        [Step::Rewrite, Step::Image, Step::Podcast, Step::Video]
+    pub fn all() -> [Step; 5] {
+        [Step::Rewrite, Step::Image, Step::Podcast, Step::Scenes, Step::Video]
     }
 }
 

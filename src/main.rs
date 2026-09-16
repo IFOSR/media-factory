@@ -8,6 +8,8 @@ mod llm;
 mod pi_rpc;
 mod podcast;
 mod provider;
+mod render;
+mod scene;
 mod server;
 mod task;
 mod tts;
@@ -53,7 +55,11 @@ enum Commands {
         /// 用户自定义播客风格要求
         #[arg(long)] prompt: Option<String>,
     },
-    /// 步骤 4：图片 + 播客合成视频
+    /// 步骤 4：生成分镜（scene.json，动态解释画面）
+    Scenes {
+        #[arg(long)] id: Option<String>,
+    },
+    /// 步骤 5：图片 + 播客合成视频（动态解释画面 / 封面图贯穿）
     Video {
         #[arg(long)] id: Option<String>,
     },
@@ -73,6 +79,27 @@ enum Commands {
         #[arg(long)] disclaimer: bool,
         /// 尺寸：square(方形) / portrait(手机竖屏 9:16) / landscape(横屏 16:9)
         #[arg(long, value_parser = ["square", "portrait", "landscape"])] size: Option<String>,
+    },
+    /// 启动渲染服务（算力机运行，供云端下发渲染任务）
+    RenderServer {
+        /// 监听端口
+        #[arg(long, default_value_t = 7788)]
+        port: u16,
+        /// 工作目录（素材下载与渲染产物）
+        #[arg(long, default_value = "~/.media-factory-render")]
+        home: String,
+        /// 鉴权 token 文件（内容即 token）
+        #[arg(long)]
+        token_file: Option<String>,
+        /// 并发渲染任务上限
+        #[arg(long, default_value_t = 1)]
+        max_concurrent: usize,
+        /// hyperframes CLI 路径（默认容器内路径）
+        #[arg(long)]
+        hyperframes_bin: Option<String>,
+        /// 本地 GSAP 文件路径（默认容器内路径）
+        #[arg(long)]
+        gsap_js: Option<String>,
     },
     /// 启动 Web 服务（默认后台运行，可用 --stop/--restart/--status 管理）
     Serve {
@@ -110,11 +137,12 @@ async fn main() -> anyhow::Result<()> {
 
     // 前置检查：除 config 和 serve 管理动作外都需要 pi；video/run 需要 ffmpeg
     let needs_pi = !matches!(&cli.command, Commands::Config)
+        && !matches!(&cli.command, Commands::RenderServer { .. })
         && !matches!(&cli.command, Commands::Serve { stop: true, .. } | Commands::Serve { status: true, .. });
     if needs_pi {
         require_pi()?;
     }
-    if matches!(&cli.command, Commands::Video { .. } | Commands::Run { .. }) {
+    if matches!(&cli.command, Commands::Video { .. } | Commands::Run { .. } | Commands::RenderServer { .. }) {
         ffmpeg::require_ffmpeg()?;
     }
 
@@ -129,8 +157,39 @@ async fn main() -> anyhow::Result<()> {
         Commands::Podcast { id, script, prompt } => {
             cmd::podcast::run(id, script, prompt).await?;
         }
+        Commands::Scenes { id } => {
+            cmd::scenes::run(id).await?;
+        }
         Commands::Video { id } => {
-            cmd::video::run(id)?;
+            cmd::video::run(id).await?;
+        }
+        Commands::RenderServer { port, home, token_file, max_concurrent, hyperframes_bin, gsap_js } => {
+            let home = if let Some(rest) = home.strip_prefix("~/") {
+                crate::config::data_dir().join(rest)
+            } else {
+                std::path::PathBuf::from(home)
+            };
+            let token = match token_file {
+                Some(p) => {
+                    let path = std::path::PathBuf::from(&p);
+                    if path.exists() {
+                        Some(std::fs::read_to_string(&path)?.trim().to_string())
+                    } else {
+                        println!("⚠ token 文件不存在（{p}），本次不校验 token");
+                        None
+                    }
+                }
+                None => std::env::var("MF_RENDER_TOKEN").ok(),
+            };
+            render::server::run(render::server::ServerOpts {
+                port,
+                home,
+                token,
+                max_concurrent,
+                hyperframes_bin: hyperframes_bin.map(std::path::PathBuf::from),
+                gsap_js: gsap_js.map(std::path::PathBuf::from),
+            })
+            .await?;
         }
         Commands::Run { input, id, r#ref, prompt, image_prompt, podcast_prompt, disclaimer, size } => {
             cmd::run::run(input, id, r#ref, prompt, image_prompt, podcast_prompt, disclaimer, size).await?;

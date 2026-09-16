@@ -21,6 +21,87 @@ pub struct Config {
     pub tasks: TaskSelections,
     #[serde(default)]
     pub providers: HashMap<String, ProviderConfig>,
+    /// 视频画面模式与渲染设置
+    #[serde(default)]
+    pub video: VideoSettings,
+}
+
+/// 视频画面模式：`dynamic`（动态解释画面，需算力机）/ `cover`（封面图贯穿，本机即可）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VideoSettings {
+    #[serde(default = "default_video_mode")]
+    pub mode: String,
+    #[serde(default)]
+    pub dynamic: DynamicRenderSettings,
+}
+
+fn default_video_mode() -> String {
+    "dynamic".to_string()
+}
+
+impl Default for VideoSettings {
+    fn default() -> Self {
+        Self {
+            mode: default_video_mode(),
+            dynamic: DynamicRenderSettings::default(),
+        }
+    }
+}
+
+impl VideoSettings {
+    pub fn is_dynamic(&self) -> bool {
+        self.mode.eq_ignore_ascii_case("dynamic")
+    }
+}
+
+/// 动态渲染（算力机渲染服务）设置
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DynamicRenderSettings {
+    /// 渲染服务地址（算力机，例如 http://100.75.20.123:7788）
+    #[serde(default)]
+    pub renderer_url: String,
+    /// 本服务的回调基地址（算力机可达，例如 http://14.103.216.193:8092）
+    /// 算力机据此下载素材、回传成品
+    #[serde(default)]
+    pub callback_base: String,
+    /// 渲染服务鉴权 token
+    #[serde(default)]
+    pub token: String,
+    #[serde(default = "default_render_fps")]
+    pub fps: u32,
+    /// draft | looks | delivery
+    #[serde(default = "default_render_quality")]
+    pub quality: String,
+    /// 渲染并行 worker 数（算力机侧）
+    #[serde(default = "default_render_workers")]
+    pub workers: usize,
+    /// 算力机不可用时：cover（先出静态版，默认）| queue（排队等恢复）
+    #[serde(default = "default_on_unavailable")]
+    pub on_unavailable: String,
+    /// 等待渲染完成的上限（秒）
+    #[serde(default = "default_render_timeout")]
+    pub timeout_seconds: u64,
+}
+
+fn default_render_fps() -> u32 { 24 }
+fn default_render_quality() -> String { "looks".to_string() }
+fn default_render_workers() -> usize { 16 }
+fn default_on_unavailable() -> String { "cover".to_string() }
+fn default_render_timeout() -> u64 { 900 }
+
+impl Default for DynamicRenderSettings {
+    fn default() -> Self {
+        Self {
+            renderer_url: String::new(),
+            callback_base: String::new(),
+            token: String::new(),
+            fps: default_render_fps(),
+            quality: default_render_quality(),
+            workers: default_render_workers(),
+            on_unavailable: default_on_unavailable(),
+            timeout_seconds: default_render_timeout(),
+        }
+    }
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]

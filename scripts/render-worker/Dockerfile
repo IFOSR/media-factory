@@ -87,6 +87,5 @@ VOLUME ["/data"]
 
 # tini 作为 init，正确回收 Chromium 子进程
 ENTRYPOINT ["/usr/bin/tini", "--"]
-# M0 阶段先提供 shell 以便冒烟验证；render-server 实现后改为：
-#   CMD ["/usr/local/bin/media-factory", "render-server", "--port", "7788", "--home", "/data"]
-CMD ["/bin/bash"]
+# 默认启动渲染服务；token 文件放数据卷内（/data/render-token），不存在则不校验
+CMD ["/usr/local/bin/media-factory", "render-server", "--port", "7788", "--home", "/data", "--token-file", "/data/render-token"]

@@ -357,6 +357,21 @@
           <button class="mini" onclick="openProviderModal('podcast')">⚙ 配置</button>
         </section>
         <section>
+          <h3>视频画面</h3>
+          <div style="margin-bottom:10px"><label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">画面模式</label>
+            <select id="cfgVideoMode">
+              <option value="dynamic">动态解释画面（需算力机渲染服务）</option>
+              <option value="cover">封面图贯穿（静态，最快）</option>
+            </select></div>
+          <div style="margin-bottom:10px"><label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">渲染服务地址（算力机）</label>
+            <input type="text" id="cfgRendererUrl" placeholder="http://100.75.20.123:7788"></div>
+          <div style="margin-bottom:10px"><label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">本服务回调地址（算力机可达）</label>
+            <input type="text" id="cfgCallbackBase" placeholder="http://14.103.216.193:8092"></div>
+          <div style="margin-bottom:10px"><label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">渲染 token</label>
+            <input type="text" id="cfgRenderToken" placeholder="留空保持原值"></div>
+          <div class="hint">动态渲染失败或算力机不可用时，自动降级为封面图贯穿。</div>
+        </section>
+        <section>
           <h3>自定义 provider（Other）</h3>
           <div id="cfgCustoms"></div>
           <button class="mini" onclick="toggleCustomForm()">+ 添加自定义 provider</button>
@@ -391,11 +406,13 @@ const STEPS = [
   { id:'rewrite', num:'01', name:'改写',   sub:'爆款文案' },
   { id:'image',   num:'02', name:'生图',   sub:'核心意象配图' },
   { id:'podcast', num:'03', name:'播客',   sub:'双人对话音频' },
-  { id:'video',   num:'04', name:'视频',   sub:'图片 + 音频 + 字幕' },
+  { id:'scenes',  num:'04', name:'分镜',   sub:'动态解释画面脚本' },
+  { id:'video',   num:'05', name:'视频',   sub:'动态画面／封面 + 字幕' },
 ];
 const ARTIFACT_META = {
   'rewritten.md': { step:'rewrite', cap:'改写文案', kind:'text', editable:true },
   'script.md':    { step:'podcast', cap:'播客脚本', kind:'text', editable:true },
+  'scene.json':   { step:'scenes',  cap:'分镜脚本', kind:'text', editable:true },
   'subtitle.srt': { step:'podcast', cap:'字幕',     kind:'text', editable:false },
   'image.png':    { step:'image',   cap:'配图',     kind:'image' },
   'podcast.mp3':  { step:'podcast', cap:'播客音频', kind:'audio' },
@@ -411,7 +428,7 @@ const PODCAST_VOICES = [
 function esc(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function nowTime(){ const d=new Date(); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')+':'+String(d.getSeconds()).padStart(2,'0'); }
 function setStatus(msg,isErr){ const el=document.getElementById('status'); el.className=isErr?'err':''; el.innerHTML=msg; }
-function stepName(s){ return {rewrite:'改写',image:'生图',podcast:'播客',video:'视频'}[s]||s; }
+function stepName(s){ return {rewrite:'改写',image:'生图',podcast:'播客',scenes:'分镜',video:'视频'}[s]||s; }
 function voiceOptions(){ return '<option value="">默认音色</option>'+PODCAST_VOICES.map(v=>`<option value="${v.id}">${v.label}</option>`).join(''); }
 
 /* ============================================================
@@ -459,6 +476,14 @@ function stepInputPane(step){
       <label class="chk">嘉宾 <select id="speaker2">${voiceOptions()}</select></label>
     </div>
     <div class="hint">双人对话播客；留空音色则用配置默认。</div>`;
+  if(step==='scenes') return `
+    <div class="f"><label>画面模式</label>
+      <select id="videoMode" onchange="onVideoModeChange()">
+        <option value="dynamic">动态解释画面（图表/要点/数据卡，随音频同步）</option>
+        <option value="cover">封面图贯穿（静态，最快）</option>
+      </select>
+      <div class="hint" id="videoModeHint">动态模式会把分镜交给算力机渲染；算力机不可用时自动降级为封面图贯穿。</div>
+    </div>`;
   if(step==='video') return `
     <div class="hint" style="padding:4px 0">视频步骤自动使用上方配图与播客音频合成（含字幕），无需额外输入。待播客与配图就绪后执行。成品生成后此处会出现「打包下载全部产物」。</div>`;
   return '';
@@ -520,6 +545,15 @@ function setCardState(step,st){
 /* 运行视图中，把某步骤切回投料态以便单步执行 */
 function toInput(step){ setCardState(step,'input'); collapseCard(step,false); setStatus('已为「'+stepName(step)+'」步骤切换到投料态'); }
 
+/* 画面模式：任务级参数；同时提示全局默认值 */
+function onVideoModeChange(){
+  const v=document.getElementById('videoMode').value;
+  const hint=document.getElementById('videoModeHint');
+  if(hint) hint.textContent = v==='dynamic'
+    ? '动态模式会把分镜交给算力机渲染；算力机不可用时自动降级为封面图贯穿。'
+    : '静态模式：封面图贯穿全片（本机合成，最快）。';
+}
+
 /* ===== 重跑：预填上次配置，允许修改后重新执行 ===== */
 function markDownstreamStale(step){
   const order=['rewrite','image','podcast','video'];
@@ -548,6 +582,9 @@ function applyStepParams(step){
     document.getElementById('imgSize').value=p.size||'square';
     document.getElementById('disclaimer').checked=!!p.disclaimer;
     if(Array.isArray(p.ref_images)){ state.refImages=p.ref_images.slice(); renderRefImages(); }
+  } else if(step==='scenes'){
+    const vm=document.getElementById('videoMode');
+    if(vm && p.video_mode) vm.value=p.video_mode;
   } else if(step==='podcast'){
     document.getElementById('podcastPrompt').value=p.prompt||'';
     document.getElementById('speaker1').value=p.speaker1||'';
@@ -732,6 +769,10 @@ function collectInputs(step){
   if((step==='run'||step==='image')&&state.refImages.length) body.ref_images=state.refImages;
   if((step==='run'||step==='image')&&document.getElementById('disclaimer').checked) body.disclaimer=true;
   if(step==='run'||step==='image') body.size=document.getElementById('imgSize').value;
+  if(step==='run'||step==='scenes'||step==='video'){
+    const vm=document.getElementById('videoMode');
+    if(vm) body.video_mode=vm.value;
+  }
   return body;
 }
 
@@ -975,6 +1016,16 @@ function renderConfig(){
   document.getElementById('llmCurrent').textContent=labelFor(llmKey)+(llmModel?' · '+llmModel:'');
   document.getElementById('imageCurrent').textContent=labelFor(CFG.tasks.image?.provider);
   document.getElementById('podcastCurrent').textContent=labelFor(CFG.tasks.podcast?.provider);
+  // 视频画面
+  const v=CFG.video||{};
+  const vm=document.getElementById('cfgVideoMode');
+  if(vm){ vm.value = v.mode || 'dynamic'; }
+  const ru=document.getElementById('cfgRendererUrl');
+  if(ru){ ru.value = (v.dynamic && v.dynamic.renderer_url) || ''; }
+  const cb=document.getElementById('cfgCallbackBase');
+  if(cb){ cb.value = (v.dynamic && v.dynamic.callback_base) || ''; }
+  const rt=document.getElementById('cfgRenderToken');
+  if(rt){ rt.value=''; rt.placeholder = (v.dynamic && v.dynamic.token) ? '已配置（留空保持原值）' : '未配置'; }
   renderCustoms();
 }
 
@@ -1111,6 +1162,17 @@ function addCustom(){
   renderConfig();
 }
 async function saveConfig(){
+  // 合并「视频画面」设置
+  const prev=CFG.video||{};
+  const dyn=Object.assign({}, prev.dynamic||{});
+  const ru=document.getElementById('cfgRendererUrl');
+  const cb=document.getElementById('cfgCallbackBase');
+  const rt=document.getElementById('cfgRenderToken');
+  const vm=document.getElementById('cfgVideoMode');
+  if(ru) dyn.renderer_url=ru.value.trim();
+  if(cb) dyn.callback_base=cb.value.trim();
+  if(rt && rt.value.trim()) dyn.token=rt.value.trim();
+  CFG.video=Object.assign({}, prev, { mode: (vm?vm.value:'dynamic'), dynamic: dyn });
   const res=await fetch('/api/config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(CFG)});
   const d=await res.json();
   if(d.ok){ closeConfig(); setStatus('✓ 配置已保存'); } else alert('保存失败：'+(d.error||'未知'));

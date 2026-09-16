@@ -382,3 +382,54 @@ ExecStart=/usr/local/bin/media-factory render-server --port 7788 --token-file /e
 | way → 云端上传吞吐 | 6.09 MB/s（公网）／1.83 MB/s（Tailscale 直连） |
 | Tailscale 直连延迟 | 5~7 ms（退化到中继时 155ms） |
 | 渲染镜像体积 | 2.71GB（仅算力机） |
+
+
+---
+
+## 十五、实施结果（2026-09-16 端到端验证通过）
+
+### 交付清单
+
+| 模块 | 内容 |
+|---|---|
+| 分镜步骤 | `src/cmd/scenes.rs` + `prompts/scenes.txt`：LLM 按字幕时间轴生成 `scene.json`（可编辑中间产物） |
+| 场景数据契约 | `src/scene.rs`：类型定义、校验（索引裁剪/排序/覆盖补洞/抽稀/数字防错）、时间轴换算、HTML 生成 |
+| 画面模板 | `src/templates/explainer.html`：7 种场景类型（cover/chapter/bullets/metric/quote/bar_chart/end）+ GSAP 时间轴 |
+| 渲染服务 | `src/render/server.rs`（`media-factory render-server`）：任务接收、素材下载、HyperFrames 渲染、ffmpeg 合成、回传、**上传成功后删除本地** |
+| 云端分发 | `src/render/mod.rs`：任务协议、封面模式合成、远端提交与等待、结果登记 |
+| 视频步骤 | `src/cmd/video.rs`：`dynamic` / `cover` 双模式 + **自动降级** |
+| 云端回调 | `/api/render-jobs/:id/progress`、`/api/render-jobs/:id/failed`、`/api/render-results/:id`（token 鉴权，放大 body 限制） |
+| Web UI | 第 5 张卡片「分镜」（含画面模式选择）+ 配置面板「视频画面」区块 |
+| 部署 | `scripts/render-worker/`（Dockerfile + README + setup.sh），容器化渲染环境 |
+
+### 端到端实测（云端 huoshan → 算力机 way）
+
+真实任务（185 秒播客）：
+
+| 环节 | 实测 |
+|---|---|
+| 全流程 | 改写 → 生图 → 播客 → **分镜** → **动态渲染** → 完成，无错误 |
+| 分镜产出 | 14 个场景，类型分布 cover 1 / chapter 2 / bullets 9 / quote 3 / metric 1 / end 1 |
+| 动态渲染耗时 | **67.8 秒**（185 秒视频，24fps，16 workers） |
+| 成品规格 | **1920×1080 / 24fps / 13.1MB** |
+| 回传 | 成功落盘云端 `output/<task>/video.mp4` |
+| **算力机清理** | **上传成功后本地 `jobs/` 目录自动清空** ✓ |
+| 降级验证 | 渲染 panic 时云端自动降级封面模式并成功出片（任务不失败）✓ |
+
+### 实施中发现并修复的问题
+
+| 问题 | 现象 | 修复 |
+|---|---|---|
+| Tailscale 安装后 DNS 全挂 | 云端所有域名解析失败（火山内网 DNS 100.96.0.2 不可达） | `tailscale set --accept-dns=false` + 写入 `/etc/systemd/resolved.conf.d/mf-dns.conf` 使用公共 DNS（可回滚） |
+| 渲染服务 panic | 日志尾部截断按字节切分，中文输出触发 `is_char_boundary` 断言失败 | `truncate_tail` / `head_chars` 按 UTF-8 边界安全截断 |
+| 回传被拒 | axum 默认 body 限制 2MB，13MB 成品视频 400 | 对回传/上传路由 `DefaultBodyLimit::max(...)` |
+| 假成功 | 旧 `video.mp4` 存在导致 video 步骤立即返回 done | 合成前先把旧成品改名为 `video.prev.mp4` |
+| 数字校验过严 | 原文"十亿" vs 数据卡"10亿" → 数据卡被降级 | 新增中文数字解析（十/百/千/万/亿）与单位倍率换算 |
+| render-server 需要 pi | 算力机无需 LLM 却被前置检查拦截 | 前置检查排除 `RenderServer`，并纳入 ffmpeg 检查 |
+
+### 关键运维要点
+
+- 算力机**不要重启 docker 守护进程**（上面跑着 vLLM）；本方案只用 `docker load` / `docker run`
+- 容器必须清空代理环境变量（宿主 docker 守护进程可能注入失效代理）
+- 渲染镜像约 2.7GB，构建机需能访问 Docker Hub；Node/hyperframes/Chromium 均走 npmmirror
+- 算力机并发默认 1（超出返回 409，由云端排队）

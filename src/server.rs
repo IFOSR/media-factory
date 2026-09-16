@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use axum::extract::{Path as AxPath, Query, State};
 use axum::http::header::{CONTENT_DISPOSITION, CONTENT_TYPE};
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::sse::{Event as SseEvent, Sse};
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
@@ -57,6 +57,9 @@ struct RunReq {
     // 生图尺寸：square / portrait / landscape
     #[serde(default)]
     size: Option<String>,
+    // 画面模式覆盖：dynamic | cover（留空用全局配置）
+    #[serde(default)]
+    video_mode: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -100,6 +103,21 @@ struct PodcastReq {
 struct VideoReq {
     #[serde(default)]
     id: Option<String>,
+    /// 是否叠加免责声明（缺省时读取任务已保存的参数）
+    #[serde(default)]
+    disclaimer: Option<bool>,
+    /// 画面模式覆盖：dynamic | cover（留空用全局配置）
+    #[serde(default)]
+    video_mode: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct ScenesReq {
+    #[serde(default)]
+    id: Option<String>,
+    /// 画面模式覆盖：dynamic | cover
+    #[serde(default)]
+    video_mode: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -179,13 +197,15 @@ fn gen_id() -> String {
 // ============ 执行端点（后台执行 + 立即返回 task_id） ============
 
 async fn run_pipeline(State(state): State<AppState>, Json(req): Json<RunReq>) -> Response {
-    let (cfg, llm) = match load_ctx() {
+    let (mut cfg, llm) = match load_ctx() {
         Ok(x) => x,
         Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"ok": false, "error": e.to_string()}))).into_response(),
     };
+    apply_video_mode(&mut cfg, req.video_mode.clone());
     let id = req.id.clone().unwrap_or_else(gen_id);
     let events = TaskEvents::streaming(output_root().as_path(), &id);
     events.init();
+    events.set_step_params("scenes", json!({ "video_mode": cfg.video.mode }));
     // 持久化各步骤执行参数（重跑预填用）
     events.set_step_params("rewrite", json!({"text": req.text, "prompt": req.prompt}));
     events.set_step_params("image", json!({"prompt": req.image_prompt, "size": req.size, "disclaimer": req.disclaimer, "ref_images": req.ref_images}));
@@ -315,26 +335,67 @@ async fn podcast(State(state): State<AppState>, Json(req): Json<PodcastReq>) -> 
     Json(json!({"ok": true, "id": id})).into_response()
 }
 
-async fn video(State(state): State<AppState>, Json(req): Json<VideoReq>) -> Response {
+async fn scenes(State(state): State<AppState>, Json(req): Json<ScenesReq>) -> Response {
+    let (mut cfg, llm) = match load_ctx() {
+        Ok(x) => x,
+        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"ok": false, "error": e.to_string()}))).into_response(),
+    };
+    apply_video_mode(&mut cfg, req.video_mode.clone());
     let dir = match resolve_dir(req.id) {
         Ok(d) => d,
         Err(e) => return (StatusCode::BAD_REQUEST, Json(json!({"ok": false, "error": e.to_string()}))).into_response(),
     };
     let id = dir_id(&dir);
     let events = TaskEvents::streaming(output_root().as_path(), &id);
-    events.set_step_params("video", json!({}));
+    events.set_step_params("scenes", json!({ "video_mode": cfg.video.mode }));
+    let dynamic = cfg.video.is_dynamic();
     let lock = state.run_lock.clone();
     tokio::spawn(async move {
         let _guard = lock.lock().await;
-        let events2 = events.clone();
-        let dir2 = dir.clone();
-        let r = tokio::task::spawn_blocking(move || cmd::video::run_with(&dir2, &events2)).await;
-        match r {
-            Ok(Ok(())) => events.task_done(),
-            Ok(Err(e)) => {
-                events.step_failed(crate::task::Step::Video, &e.to_string());
+        if !dynamic {
+            events.log(crate::task::Step::Scenes, "封面模式（静态画面），跳过分镜");
+            events.step_done(crate::task::Step::Scenes);
+            events.task_done();
+            return;
+        }
+        events.step_running(crate::task::Step::Scenes);
+        match cmd::scenes::run_with(&dir, llm.as_ref(), &events).await {
+            Ok(_) => events.task_done(),
+            Err(e) => {
+                events.step_failed(crate::task::Step::Scenes, &e.to_string());
                 events.task_error(&e.to_string());
             }
+        }
+    });
+    Json(json!({"ok": true, "id": id})).into_response()
+}
+
+async fn video(State(state): State<AppState>, Json(req): Json<VideoReq>) -> Response {
+    let (mut cfg, _llm) = match load_ctx() {
+        Ok(x) => x,
+        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"ok": false, "error": e.to_string()}))).into_response(),
+    };
+    apply_video_mode(&mut cfg, req.video_mode.clone());
+    let dir = match resolve_dir(req.id) {
+        Ok(d) => d,
+        Err(e) => return (StatusCode::BAD_REQUEST, Json(json!({"ok": false, "error": e.to_string()}))).into_response(),
+    };
+    let id = dir_id(&dir);
+    let events = TaskEvents::streaming(output_root().as_path(), &id);
+    let disclaimer = req.disclaimer.unwrap_or_else(|| task_disclaimer(&id));
+    events.set_step_params("video", json!({ "disclaimer": disclaimer }));
+    let lock = state.run_lock.clone();
+    let id2 = id.clone();
+    tokio::spawn(async move {
+        let _guard = lock.lock().await;
+        events.step_running(crate::task::Step::Video);
+        let dtext = if disclaimer {
+            Some(cmd::image::DISCLAIMER_TEXT.to_string())
+        } else {
+            None
+        };
+        match cmd::video::compose(&dir, &cfg, &id2, &events, dtext).await {
+            Ok(()) => events.task_done(),
             Err(e) => {
                 events.step_failed(crate::task::Step::Video, &e.to_string());
                 events.task_error(&e.to_string());
@@ -342,6 +403,138 @@ async fn video(State(state): State<AppState>, Json(req): Json<VideoReq>) -> Resp
         }
     });
     Json(json!({"ok": true, "id": id})).into_response()
+}
+
+/// 任务级画面模式覆盖（dynamic | cover），留空则用全局配置
+fn apply_video_mode(cfg: &mut Config, mode: Option<String>) {
+    if let Some(m) = mode {
+        let m = m.trim().to_lowercase();
+        if m == "dynamic" || m == "cover" {
+            cfg.video.mode = m;
+        }
+    }
+}
+
+/// 读取任务已保存的免责声明选项（来自分镜/生图参数）
+fn task_disclaimer(id: &str) -> bool {
+    let p = output_root().join(id).join("task.json");
+    std::fs::read_to_string(p)
+        .ok()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+        .and_then(|v| {
+            v.get("params")
+                .and_then(|p| p.get("image"))
+                .and_then(|i| i.get("disclaimer"))
+                .and_then(|d| d.as_bool())
+        })
+        .unwrap_or(false)
+}
+
+/// 渲染服务回调鉴权：与配置的 render token 比对（未配置则不校验）
+fn check_render_token(headers: &HeaderMap, cfg: &Config) -> bool {
+    let expect = cfg.video.dynamic.token.trim();
+    if expect.is_empty() {
+        return true;
+    }
+    headers
+        .get("X-Render-Token")
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v == expect)
+        .unwrap_or(false)
+}
+
+/// 算力机上报渲染进度（转发为思考链路事件）
+async fn render_progress(
+    AxPath(id): AxPath<String>,
+    headers: HeaderMap,
+    Json(rep): Json<crate::render::ProgressReport>,
+) -> Response {
+    let (cfg, _) = match load_ctx() {
+        Ok(x) => x,
+        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"ok": false, "error": e.to_string()}))).into_response(),
+    };
+    if !check_render_token(&headers, &cfg) {
+        return (StatusCode::UNAUTHORIZED, Json(json!({"ok": false, "error": "invalid token"}))).into_response();
+    }
+    let events = TaskEvents::streaming(output_root().as_path(), &id);
+    events.log(crate::task::Step::Video, &format!("[算力机] {}", rep.message));
+    events.progress(crate::task::Step::Video, rep.percent);
+    Json(json!({"ok": true})).into_response()
+}
+
+/// 算力机上报渲染失败
+async fn render_failed(
+    AxPath(id): AxPath<String>,
+    headers: HeaderMap,
+    Json(rep): Json<crate::render::FailureReport>,
+) -> Response {
+    let (cfg, _) = match load_ctx() {
+        Ok(x) => x,
+        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"ok": false, "error": e.to_string()}))).into_response(),
+    };
+    if !check_render_token(&headers, &cfg) {
+        return (StatusCode::UNAUTHORIZED, Json(json!({"ok": false, "error": "invalid token"}))).into_response();
+    }
+    // 登记失败，让等待中的 video 步骤立即感知（并按策略降级）
+    crate::render::set_outcome(&id, crate::render::RenderOutcome::Failed(rep.error.clone()));
+    let events = TaskEvents::streaming(output_root().as_path(), &id);
+    events.log(crate::task::Step::Video, &format!("[算力机] 渲染失败：{}", rep.error));
+    Json(json!({"ok": true})).into_response()
+}
+
+/// 算力机回传成品视频（multipart），落盘为 output/<id>/video.mp4
+async fn render_result(
+    AxPath(id): AxPath<String>,
+    headers: HeaderMap,
+    mut multipart: axum::extract::Multipart,
+) -> Response {
+    let (cfg, _) = match load_ctx() {
+        Ok(x) => x,
+        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"ok": false, "error": e.to_string()}))).into_response(),
+    };
+    if !check_render_token(&headers, &cfg) {
+        return (StatusCode::UNAUTHORIZED, Json(json!({"ok": false, "error": "invalid token"}))).into_response();
+    }
+    let dir = output_root().join(&id);
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"ok": false, "error": e.to_string()}))).into_response();
+    }
+    let out = dir.join("video.mp4");
+    let tmp = dir.join("video.mp4.part");
+
+    let mut size = 0usize;
+    let mut sha = String::new();
+    let result = async {
+        while let Some(field) = multipart.next_field().await? {
+            if field.name() != Some("file") {
+                continue;
+            }
+            let data = field.bytes().await?;
+            anyhow::ensure!(!data.is_empty(), "回传文件为空");
+            size = data.len();
+            use sha2::{Digest, Sha256};
+            let mut h = Sha256::new();
+            h.update(&data);
+            sha = format!("{:x}", h.finalize());
+            std::fs::write(&tmp, &data)?;
+            std::fs::rename(&tmp, &out)?;
+            return Ok::<(), anyhow::Error>(());
+        }
+        anyhow::bail!("未收到 file 字段");
+    }
+    .await;
+
+    match result {
+        Ok(()) => {
+            let events = TaskEvents::streaming(output_root().as_path(), &id);
+            events.log(
+                crate::task::Step::Video,
+                &format!("[算力机] 成品已回传（{:.1} MB）", size as f64 / 1_048_576.0),
+            );
+            Json(json!({"ok": true, "size": size, "sha256": sha})).into_response()
+        }
+        Err(e) => (StatusCode::BAD_REQUEST, Json(json!({"ok": false, "error": e.to_string()}))).into_response(),
+    }
 }
 
 // ============ 查询端点 ============
@@ -661,14 +854,24 @@ pub async fn run(port: u16) -> anyhow::Result<()> {
         .route("/api/rewrite", post(rewrite))
         .route("/api/image", post(image))
         .route("/api/podcast", post(podcast))
+        .route("/api/scenes", post(scenes))
         .route("/api/video", post(video))
         .route("/api/tasks", get(list_tasks).delete(clear_tasks))
         .route("/api/tasks/:id", get(task_info).delete(delete_task))
         .route("/api/tasks/:id/archive", get(archive))
         .route("/api/tasks/:id/events", get(task_events))
         .route("/api/files/:id/:name", get(download).put(save_file))
-        .route("/api/upload", post(upload))
+        .route(
+            "/api/upload",
+            post(upload).layer(axum::extract::DefaultBodyLimit::max(128 * 1024 * 1024)),
+        )
         .route("/api/fetch-models", post(fetch_models))
+        .route("/api/render-jobs/:id/progress", post(render_progress))
+        .route("/api/render-jobs/:id/failed", post(render_failed))
+        .route(
+            "/api/render-results/:id",
+            post(render_result).layer(axum::extract::DefaultBodyLimit::max(512 * 1024 * 1024)),
+        )
         .route("/api/config", get(get_config).put(put_config))
         .with_state(state);
 

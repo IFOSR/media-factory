@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use crate::cmd::{image, podcast, rewrite, video};
+use crate::cmd::{image, podcast, rewrite, scenes, video};
 use crate::config::Config;
 use crate::llm::LlmAgent;
 use crate::podcast as podcast_backend;
@@ -88,6 +88,8 @@ pub async fn run_with_config(
             return Err(e);
         }
     };
+    // 免责声明统一在视频合成阶段全程叠加（避免在封面/动态画面上重复）：
+    // 仅当画面模式为 cover 时才烧进图片（此时图片即全片画面）
     if let Err(e) = image::run_with(&dir, reference, llm, img_provider.as_ref(), prompts.image, events, disclaimer, size).await {
         events.step_failed(Step::Image, &e.to_string());
         events.task_error(&e.to_string());
@@ -112,7 +114,24 @@ pub async fn run_with_config(
         return Err(e);
     }
 
-    if let Err(e) = video::run_with(&dir, events) {
+    // 分镜：动态画面模式才需要；cover 模式直接标记跳过
+    if cfg.video.is_dynamic() {
+        // 分镜失败不终止任务：记录失败并降级为封面模式（video 步骤会走降级路径）
+        if let Err(e) = scenes::run_with(&dir, llm, events).await {
+            events.step_failed(Step::Scenes, &e.to_string());
+            events.log(Step::Scenes, &format!("分镜失败（{e}），本次将降级为封面图贯穿"));
+        }
+    } else {
+        events.log(Step::Scenes, "封面模式（静态画面），跳过分镜");
+        events.step_done(Step::Scenes);
+    }
+
+    let disclaimer_text = if disclaimer {
+        Some(crate::cmd::image::DISCLAIMER_TEXT.to_string())
+    } else {
+        None
+    };
+    if let Err(e) = video::compose(&dir, cfg, &id, events, disclaimer_text).await {
         events.step_failed(Step::Video, &e.to_string());
         events.task_error(&e.to_string());
         return Err(e);

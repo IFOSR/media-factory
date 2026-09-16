@@ -72,6 +72,36 @@ sudo docker run -d --name mf-render --restart unless-stopped \
    算力机上可能跑着其他重要容器（我们的 way 上有 2 个 vLLM 服务）。重启 docker 会杀掉它们。
    本方案全程只需 `docker load` / `docker run`，不触碰守护进程配置。
 
+## 三点五、启动参数（渲染服务）
+
+镜像默认 CMD 即启动渲染服务：
+
+```bash
+media-factory render-server --port 7788 --home /data --token-file /data/render-token
+```
+
+| 参数 | 说明 |
+|---|---|
+| `--token-file` | token 文件（内容即 token）；文件不存在则不校验（会有提示） |
+| `--max-concurrent` | 并发渲染上限（默认 1；32 线程可到 2） |
+| `--hyperframes-bin` / `--gsap-js` | 覆盖容器内默认路径（一般不用改） |
+
+云端配置（`~/.media-factory/config.yaml`）：
+
+```yaml
+video:
+  mode: dynamic                 # dynamic | cover
+  dynamic:
+    renderer_url: http://<算力机 tailscale IP>:7788
+    callback_base: http://<云端公网地址>:8092   # 算力机据此下载素材与回传成品
+    token: <与容器内 render-token 一致>
+    fps: 24
+    quality: looks
+    workers: 16
+    on_unavailable: cover       # 算力机不可用时：cover（先出静态版）| queue（排队等待）
+    timeout_seconds: 900
+```
+
 ## 四、验证
 
 ```bash
