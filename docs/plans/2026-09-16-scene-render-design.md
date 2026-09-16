@@ -46,7 +46,7 @@
 │  ├─ Web UI / REST API（现有）                                                                  │
 │  ├─ 流水线：改写 → 生图 → 播客 → 分镜 → 视频                                                     │
 │  ├─ 分镜步骤：LLM 生成 scene.json（新，可编辑中间产物）                                            │
-│  ├─ 渲染分发：render.provider = remote|local                                                   │
+│  ├─ 渲染分发：video.mode = dynamic（算力机）| cover（本机静态）                                 │
 │  └─ 接收回传：/api/render-results（成品落盘 output/<id>/video.mp4）                              │
 └───────────────────────────────┬───────────────────────────────────────────────────────────────┘
       控制面：Tailscale（100.84.242.125 → 100.75.20.123，直连 5-7ms）
@@ -82,9 +82,9 @@
 
 | 状态 | 卡片内容 |
 |---|---|
-| 投料态 | 风格选择（dark-tech/light-clean/…）、场景密度（每 N 秒一个视觉锚点）、时长上限、是否启用图表 |
+| 投料态 | **画面模式（动态解释画面 / 封面图贯穿）**、风格（dark-tech/light-clean/…）、场景密度（每 N 秒一个视觉锚点）、时长上限、是否启用图表 |
 | 思考态 | 日志流式：`读取字幕时间轴（105 段）` → `LLM 规划场景` → `校验 3 个数据场景` → `已生成 12 个场景` |
-| 完成态 | `scene.json` 可编辑（复用现有「文案可编辑 + 保存」机制）+ 场景缩略预览 |
+| 完成态 | `scene.json` 可编辑（复用现有「文案可编辑 + 保存」机制）+ 场景缩略预览；`cover` 模式下显示"已跳过（静态模式）" |
 
 理由：`scene.json` 是可编辑中间产物，独立成步才能单独编辑/重跑/查看进度，符合现有"每步可投料、可重跑、产物可干预"的产品哲学。
 同时渲染慢（分钟级）且属于 `video` 步骤的重活，抽出来能让 `video` 保持轻快、失败重试成本低。
@@ -185,48 +185,57 @@ X-Render-Token: <shared secret>
   - 保留策略：不保留历史成品（默认 0 份；可用环境变量 MF_RENDER_KEEP=n 调整）
 ```
 
-## 七、渲染 Provider 抽象（嵌入现有架构）
+## 七、画面模式：让用户选"动态效果"还是"封面贯穿"
 
-与现有 LLM / 生图 / 播客 的 provider 抽象保持一致：
+**不暴露 `local` / `remote` 这类机器视角的命名**（用户不关心在哪台机器渲染，只关心画面效果），改为按**画面形态**命名：
+
+| 模式 | 含义 | 在哪里合成 |
+|---|---|---|
+| **`dynamic`｜动态解释画面（推荐）** | HyperFrames 按 `scene.json` 渲染图表/要点/数据卡，与音频同步 | 算力机 way 的渲染服务 |
+| **`cover`｜封面图贯穿（静态）** | 现有能力：封面图 + 音频 + 字幕，全程静态 | 服务本机 ffmpeg（云端 2 核也能跑，已在运行） |
 
 ```yaml
 # ~/.media-factory/config.yaml
-render:
-  provider: remote              # local | remote
-  remote:
-    url: http://100.75.20.123:7788
+video:
+  mode: dynamic                  # dynamic（默认）| cover
+  dynamic:
+    renderer_url: http://100.75.20.123:7788     # 算力机渲染服务
     token: "***"
-  request:
-    fps: 24                     # 24 | 30
-    quality: looks              # draft | looks | delivery
-    timeout_seconds: 900        # 云端等待上限
-  fallback:
-    to_local: true              # 远程失败自动降级本地单图视频
+    fps: 24                      # 24 | 30
+    quality: looks               # draft | looks | delivery
+    on_unavailable: queue        # 算力机不可用时：queue（排队等恢复）| cover（先出静态版）
 ```
+
+- **任务级可覆盖**：与"图片尺寸""播客音色"一致，在「分镜」卡片投料态选择，随任务保存
+- **`cover` 模式自动跳过「分镜」步骤**：不调 LLM、不生成 scene.json，直接进视频合成（最快路径）
+- **`dynamic` 模式**：分镜 → scene.json（可编辑）→ 算力机渲染 → 回传 → 出片
 
 ```rust
 // src/render/mod.rs（新增）
+pub enum VideoMode { Dynamic, Cover }
+
 #[async_trait]
-pub trait RenderProvider: Send + Sync {
-    async fn render(&self, job: &RenderJob, events: &TaskEvents) -> anyhow::Result<RenderOutput>;
+pub trait VideoComposer: Send + Sync {
+    async fn compose(&self, plan: Option<&ScenePlan>, events: &TaskEvents) -> anyhow::Result<PathBuf>;
 }
-pub struct LocalRender;   // 现有 ffmpeg 单图 + 音频 + 字幕（降级路径）
-pub struct RemoteRender;  // 调 way render-server + 接收回传
+pub struct CoverComposer;     // 现有实现：image + audio + srt → mp4（本机 ffmpeg）
+pub struct DynamicComposer;   // 调算力机渲染服务 + 接收回传 + 清理
 ```
 
 ### 降级链（保证不断供）
 
-| 失败点 | 降级动作 |
+| 失败点 | 处理 |
 |---|---|
-| 分镜 LLM 失败 | 用字幕段落生成纯"关键词卡"场景（无图表），或直接降级第 2 层 |
-| 数字校验失败（单个场景） | 该场景降级为 `bullets` / `quote` |
-| way 不可达 / 渲染失败 / 超时 | 云端降级 **local**（现有单图 + 音频 + 字幕），任务不失败 |
-| 回传失败 | way 重试；云端等待超时后标记失败并降级 local |
+| `dynamic` 且算力机不可用 | 按 `on_unavailable`：`queue` 排队等恢复（画面质量优先）／`cover` 先出静态版（交付优先） |
+| 分镜 LLM 失败 | 退化为纯关键词卡场景；再失败则按上一条处理 |
+| 单个数据场景数字校验失败 | 该场景降级为要点卡 |
+| 算力机渲染失败 / 回传超时 | 重试 → 仍失败则按 `on_unavailable` 处理，并把失败原因写入任务错误 |
+| `cover` 模式 | 不依赖算力机，本机 ffmpeg 直接完成 |
 
 ## 八、Web UI 变更
 
 1. 新增第 5 张卡片「分镜」（投料/思考/完成三态，见第四节）
-2. `video` 卡片：显示渲染机（`way · 远程`）、ETA、实时进度（来自 way 的 progress 回调）
+2. `video` 卡片：显示当前画面模式与渲染机（`动态解释画面 · way`）、ETA、实时进度（来自 way 的 progress 回调）
 3. 渲染耗时提示：预计 `N 分钟`（基于 fPS + 音频时长 + 场景数估算）
 4. `scene.json` 编辑后重跑：只重跑 `video` 步骤（不必重跑分镜 LLM）
 5. 任务列表：显示"渲染中（way）"状态区分
@@ -291,7 +300,7 @@ ExecStart=/usr/local/bin/media-factory render-server --port 7788 --token-file /e
 |---|---|---|
 | **M0 通信打通** | way 起 `render-server`（接收 job → 下载素材 → 渲染 → 合成 → 回传 → 删本地）；云端手动触发验证 | 端到端跑通一次真实任务 |
 | **M1 分镜步骤** | scene.json schema + LLM prompt + 数字校验 + 模板库 P0 + UI 第 5 卡 | 可编辑 scene.json → 出片 |
-| **M2 流水线集成** | `render.provider = local\|remote` 抽象 + 降级链 + 进度回调接思考链路 | 全流程自动化 |
+| **M2 流水线集成** | `video.mode = dynamic\|cover` 抽象 + 降级链 + 进度回调接思考链路 | 全流程自动化 |
 | **M3 工程化** | systemd/ACL/token/清理策略/磁盘监控/超时 | 可长期无人值守运行 |
 | **M4 模板扩展** | bar_chart / quote / compare / timeline | 视觉表现力提升 |
 
@@ -301,14 +310,15 @@ ExecStart=/usr/local/bin/media-factory render-server --port 7788 --token-file /e
 |---|---|---|
 | LLM 分镜质量不稳定 | 场景与内容不匹配 | `source_quote` 校验 + 降级 + scene.json 人工可编辑 |
 | 家庭宽带上行有限（实测 6MB/s） | 多任务并发回传排队 | 排队 + 成品体积控制（1080p24 CRF16，4.4 分钟约 15~30MB） |
-| way 离线/断电 | 渲染不可用 | 云端降级 local（单图视频），任务不失败 |
+| way 离线/断电 | 动态模式不可用 | 按 `video.dynamic.on_unavailable` 处理（queue 排队 / cover 先出静态版） |
 | Tailscale 控制面境外波动 | 云端无法下发任务 | 小数据重试；必要时叠加 frp 备通道 |
 | 超长音频（>10 分钟） | 场景过多、渲染过久 | 抽稀 + 章节级场景 + ETA 提示 |
 | 算力机磁盘被占满 | 渲染失败 | 任务级临时目录 + 上传后即删 + 空间预检 |
 
 ## 十四、待确认事项
 
-1. 分镜步骤是否作为独立第 5 步（本方案默认：是）
+1. 分镜步骤是否作为独立第 5 步（本方案默认：是）；`cover` 模式自动跳过该步
+2. 算力机不可用时的默认行为：`queue`（排队等恢复）还是 `cover`（先出静态版）
 2. 成品视频规格：1080p / 24fps / CRF16（约 15~30MB per 4.4min）是否接受
 3. 并发策略：way 上默认并发 1（排队），是否允许提到 2
 4. 模板视觉：spike 样片（`~/Desktop/mf-spike-sample/`）观感确认后定稿
