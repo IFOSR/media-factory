@@ -260,7 +260,7 @@ async fn execute_inner(
     // 4) ffmpeg 合成成品
     progress(&job.callback, "mux", 85.0, "合成音频与字幕").await;
     let out = work.join("video.mp4");
-    let font_px = (job.output.width / 52).max(16);
+    let font_px = (job.output.width.min(job.output.height) / 52).max(14);
     crate::ffmpeg::mux_video(
         &visual,
         &audio,

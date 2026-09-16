@@ -179,6 +179,7 @@ pub async fn compose_dynamic(
     task_id: &str,
     events: &TaskEvents,
     disclaimer: Option<String>,
+    size: (u32, u32),
 ) -> anyhow::Result<()> {
     let d = &cfg.video.dynamic;
     anyhow::ensure!(
@@ -232,8 +233,8 @@ pub async fn compose_dynamic(
             },
         },
         output: Output {
-            width: 1920,
-            height: 1080,
+            width: size.0,
+            height: size.1,
             fps: d.fps,
             quality: d.quality.clone(),
             burn_subtitles: true,
@@ -343,8 +344,8 @@ mod tests {
                 subtitles: None,
             },
             output: Output {
-                width: 1920,
-                height: 1080,
+                width: 1080,
+                height: 1920,
                 fps: 24,
                 quality: "looks".into(),
                 burn_subtitles: true,

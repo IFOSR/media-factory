@@ -427,6 +427,26 @@ ExecStart=/usr/local/bin/media-factory render-server --port 7788 --token-file /e
 | 数字校验过严 | 原文"十亿" vs 数据卡"10亿" → 数据卡被降级 | 新增中文数字解析（十/百/千/万/亿）与单位倍率换算 |
 | render-server 需要 pi | 算力机无需 LLM 却被前置检查拦截 | 前置检查排除 `RenderServer`，并纳入 ffmpeg 检查 |
 
+### 画面比例适配（与配图一致）
+
+**视频尺寸跟随配图比例**，不是固定 16:9：
+
+| 配图比例 | 视频尺寸 | 场景 |
+|---|---|---|
+| 9:16（手机竖屏） | 1080×1920 | 抖音/视频号/Reels |
+| 16:9（横屏） | 1920×1080 | B 站/YouTube |
+| 1:1（方形） | 1080×1080 | 朋友圈/Instagram |
+| 2:3 / 3:4 等 | 短边归一到 1080，按原比例 | 其它 |
+
+实现要点：
+- `ffmpeg::video_size_for_image()`：读配图尺寸 → 短边归一到 1080（保证偶数，libx264 要求）
+- 尺寸随渲染任务传给算力机（`output.width/height`）；封面模式本就跟随图片
+- **模板全部改为按短边等比缩放**（CSS 变量 `--S: min(--W, --H)`），横竖版观感一致
+- 竖屏额外布局微调（`@media (max-aspect-ratio: 1/1)`：横向内边距收窄、纵向留白加大、图表高度调整）
+- 免责声明与字幕字号同样按短边换算
+
+实测：9:16 配图 → 成品 **1080×1920 / 24fps**，竖屏排版正常；抽帧见 `~/Desktop/mf-dynamic-sample/portrait/`
+
 ### 关键运维要点
 
 - 算力机**不要重启 docker 守护进程**（上面跑着 vLLM）；本方案只用 `docker load` / `docker run`

@@ -73,6 +73,40 @@ fn cjk_font_via_fontconfig() -> Option<PathBuf> {
     None
 }
 
+/// 探测图片/视频的像素尺寸（宽, 高）
+pub fn probe_dimensions(path: &Path) -> Option<(u32, u32)> {
+    let out = Command::new(ffprobe_bin())
+        .args(["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "csv=p=0"])
+        .arg(path)
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&out.stdout);
+    let mut it = s.trim().split(',');
+    let w: u32 = it.next()?.trim().parse().ok()?;
+    let h: u32 = it.next()?.trim().parse().ok()?;
+    if w > 0 && h > 0 {
+        Some((w, h))
+    } else {
+        None
+    }
+}
+
+/// 按配图比例推导视频尺寸：**保持与配图一致的宽高比**，短边归一到 1080
+/// （竖版 9:16 → 1080x1920；横版 16:9 → 1920x1080；方形 → 1080x1080）
+pub fn video_size_for_image(image: &Path) -> (u32, u32) {
+    let (w, h) = probe_dimensions(image).unwrap_or((1920, 1080));
+    let short = w.min(h) as f64;
+    let scale = 1080.0 / short;
+    let even = |v: f64| -> u32 {
+        let n = v.round() as u32;
+        (n - n % 2).max(2)
+    };
+    (even(w as f64 * scale), even(h as f64 * scale))
+}
+
 /// 探测图片宽度（像素），用于按宽度自适应免责声明字号
 fn probe_image_width(image: &Path) -> Option<u32> {
     let out = Command::new(ffprobe_bin())
@@ -239,6 +273,34 @@ pub fn make_video(image: &Path, audio: &Path, subtitle: Option<&Path>, out: &Pat
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn video_size_follows_aspect() {
+        let d = tempfile::tempdir().unwrap();
+        let mk = |name: &str, w: u32, h: u32| -> PathBuf {
+            let p = d.path().join(name);
+            let st = Command::new(ffmpeg_bin())
+                .args(["-y", "-f", "lavfi", "-i"])
+                .arg(format!("color=c=red:s={w}x{h}"))
+                .args(["-frames:v", "1"])
+                .arg(&p)
+                .status()
+                .unwrap();
+            assert!(st.success());
+            p
+        };
+        // 竖版 9:16
+        assert_eq!(video_size_for_image(&mk("p.png", 1080, 1920)), (1080, 1920));
+        // 横版 16:9
+        assert_eq!(video_size_for_image(&mk("l.png", 1920, 1080)), (1920, 1080));
+        // 方形
+        assert_eq!(video_size_for_image(&mk("s.png", 1024, 1024)), (1080, 1080));
+        // 2:3 竖版（短边归一到 1080）
+        let (w, h) = video_size_for_image(&mk("p23.png", 1024, 1536));
+        assert_eq!(w, 1080);
+        assert_eq!(h % 2, 0);
+        assert!(h > 1600 && h < 1640, "height={h}");
+    }
 
     fn make_test_mp3(path: &Path, seconds: u32) {
         let status = Command::new(ffmpeg_bin())

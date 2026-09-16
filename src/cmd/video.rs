@@ -41,6 +41,8 @@ pub async fn compose(
         dir.display()
     );
 
+    // 视频尺寸跟随配图比例（竖版 9:16 / 横版 16:9 / 方形），避免比例不匹配
+    let (vw, vh) = crate::ffmpeg::video_size_for_image(&image);
     let dynamic = cfg.video.is_dynamic();
     let srt = dir.join("subtitle.srt");
     let subtitle = if srt.exists() { Some(srt) } else { None };
@@ -53,7 +55,8 @@ pub async fn compose(
     }
 
     if dynamic {
-        let result = render::compose_dynamic(dir, cfg, task_id, events, disclaimer.clone()).await;
+        events.log(Step::Video, &format!("视频尺寸 {vw}x{vh}（跟随配图比例）"));
+        let result = render::compose_dynamic(dir, cfg, task_id, events, disclaimer.clone(), (vw, vh)).await;
         match result {
             Ok(()) => {
                 events.artifact(Step::Video, "video.mp4");
@@ -84,7 +87,7 @@ pub async fn compose(
         // 先用图片生成无字幕底片，再叠加字幕与免责声明，保证两者样式统一
         let silent = out2.with_extension("base.mp4");
         crate::ffmpeg::make_video(&image2, &audio2, None, &silent)?;
-        let font_px = 1920 / 52;
+        let font_px = (vw.min(vh) / 52).max(14);
         crate::ffmpeg::mux_video(
             &silent,
             &audio2,
