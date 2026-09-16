@@ -240,14 +240,35 @@ pub struct DynamicComposer;   // 调算力机渲染服务 + 接收回传 + 清�
 4. `scene.json` 编辑后重跑：只重跑 `video` 步骤（不必重跑分镜 LLM）
 5. 任务列表：显示"渲染中（way）"状态区分
 
-## 九、算力机部署（way）
+## 九、安装与分发（三类角色，各取所需）
+
+**核心原则：渲染栈（约 1GB）只装在算力机；普通用户与云端服务都保持轻量。**
+
+| 角色 | 需要安装 | 体积 | 说明 |
+|---|---|---|---|
+| **普通用户**（用云端 Web） | **无需安装**，浏览器访问 `http://<云端>:8092` | 0 | 当前形态即可 |
+| **普通用户**（用 CLI 本机跑） | media-factory 单文件 + ffmpeg | ~3.5MB + ffmpeg | `cover` 模式可用；想本机出动态画面再选装渲染栈 |
+| **云端服务机**（huoshan 2核） | media-factory + ffmpeg | ~3.5MB + ffmpeg | 编排 + 分镜 LLM + `cover` 合成（已在运行） |
+| **算力机**（way 32线程） | media-factory(`render-server`) + **渲染栈**：Node22 + hyperframes + Chromium + CJK 字体 + Chromium 运行库 | ~1GB | 唯一的重量级环境，装一次长期用 |
+
+因此：
+
+- **`install.sh` 回到轻量方案**（撤销早期"默认内置 Node+Chromium"的决定）：
+  ```
+  ./install.sh                # 轻量：单文件 + 依赖检查（默认）
+  ./install.sh --with-render  # 可选：额外装本地渲染栈（仅自建渲染机 / 本机出动态画面时需要）
+  ```
+- **GitHub Release 资产保持现状**：四平台单文件（各 ~3.5MB），不打包 Node/Chromium → CI 快、镜像小、用户下载快
+- 算力机单独一个provisioning脚本：`scripts/setup-render-worker.sh`（下面第九节的命令即其内容）
+
+### 算力机环境准备（一次性）
 
 ```bash
-# 依赖（一次性）
+# 渲染栈（一次性）
 sudo apt-get install -y ffmpeg fonts-noto-cjk fonts-noto-cjk-extra unzip nodejs npm
-npm i -g hyperframes@0.8.41 --registry=https://registry.npmmirror.com    # 或本地 prefix
+npm i -g hyperframes@0.8.41 --registry=https://registry.npmmirror.com
 curl -fsSL -o /tmp/chrome.zip https://cdn.npmmirror.com/binaries/chrome-for-testing/152.0.7977.30/linux64/chrome-headless-shell-linux64.zip
-unzip /tmp/chrome.zip -d ~/.media-factory-render/chrome && rm /tmp/chrome.zip
+sudo mkdir -p /opt/mf-render/chrome && sudo unzip -q /tmp/chrome.zip -d /opt/mf-render/chrome && rm /tmp/chrome.zip
 sudo apt-get install -y libnss3 libnspr4 libatk1.0-0t64 libatk-bridge2.0-0t64 libcups2t64 \
   libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 \
   libpango-1.0-0 libcairo2 libasound2t64 libatspi2.0-0t64 libxshmfence1
@@ -255,7 +276,7 @@ sudo apt-get install -y libnss3 libnspr4 libatk1.0-0t64 libatk-bridge2.0-0t64 li
 # 服务（systemd，Restart=always）
 # /etc/systemd/system/mf-render.service
 ExecStart=/usr/local/bin/media-factory render-server --port 7788 --token-file /etc/mf-render/token \
-          --browser-path /home/way/.media-factory-render/chrome/chrome-headless-shell-linux64/chrome-headless-shell \
+          --browser-path /opt/mf-render/chrome/chrome-headless-shell-linux64/chrome-headless-shell \
           --max-concurrent 1
 ```
 
@@ -316,6 +337,8 @@ ExecStart=/usr/local/bin/media-factory render-server --port 7788 --token-file /e
 | 算力机磁盘被占满 | 渲染失败 | 任务级临时目录 + 上传后即删 + 空间预检 |
 
 ## 十四、待确认事项
+
+> 已定：`install.sh` 保持轻量（渲染栈只装算力机）；Release 资产维持四平台单文件。
 
 1. 分镜步骤是否作为独立第 5 步（本方案默认：是）；`cover` 模式自动跳过该步
 2. 算力机不可用时的默认行为：`queue`（排队等恢复）还是 `cover`（先出静态版）
