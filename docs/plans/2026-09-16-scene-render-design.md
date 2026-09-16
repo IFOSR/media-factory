@@ -261,7 +261,32 @@ pub struct DynamicComposer;   // 调算力机渲染服务 + 接收回传 + 清�
 - **GitHub Release 资产保持现状**：四平台单文件（各 ~3.5MB），不打包 Node/Chromium → CI 快、镜像小、用户下载快
 - 算力机单独一个provisioning脚本：`scripts/setup-render-worker.sh`（下面第九节的命令即其内容）
 
-### 算力机环境准备（一次性）
+### 算力机：以 Docker 容器隔离（已实测验证 ✓）
+
+算力机上通常已在跑其他服务（我们的 way 上有 2 个 vLLM 容器，已运行 2 天），因此**渲染栈全部装进容器，宿主零污染**：
+
+| 项 | 实测值 |
+|---|---|
+| 镜像内容 | Ubuntu 24.04 + Node 22.22.1 + hyperframes 0.8.41 + Chrome Headless Shell 152 + ffmpeg 6.1.1 + fonts-noto-cjk + media-factory |
+| 镜像体积 | **2.71GB**（压缩传输约 1GB） |
+| 构建耗时 | 8 分钟（在有 Docker Hub 访问的机器上构建：`scripts/render-worker/Dockerfile`） |
+| 传输到算力机 | **1 分 14 秒**（`docker save \| gzip \| ssh \| docker load`，局域网） |
+| 容器内渲染 | 20 秒 1080p 视频 **7.3 秒**（24fps/16 workers）→ 外推 4.4 分钟音频约 **1.5~2 分钟** |
+| 容器内自检 | Node ✓ ffmpeg（含 libass/drawtext）✓ 中文字体 30 个 ✓ hyperframes ✓ |
+| 空闲占用 | 内存 7MB / CPU 0% |
+
+**两条硬约束（踩过的坑）**：
+1. **容器必须清空代理环境变量**（`-e HTTP_PROXY= -e HTTPS_PROXY=`）：算力机的 docker 守护进程配了代理
+   （way 上指向一台已离线的 `192.168.1.15:8888`），Docker 会把该代理注入容器 → 容器内 HTTP 全部失败。
+2. **绝不重启 docker 守护进程**：会杀掉算力机上其他容器（vLLM）。本方案全程只用 `docker load` / `docker run`。
+
+部署脚本：`scripts/render-worker/setup.sh`（load / start / status / smoke / stop），文档见 `scripts/render-worker/README.md`。
+
+### 算力机环境准备（备选：直接装宿主，不推荐）
+
+> 仅在无法使用 Docker 时采用；会污染宿主环境。推荐用上面的容器方案。
+
+
 
 ```bash
 # 渲染栈（一次性）
