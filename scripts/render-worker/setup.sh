@@ -10,7 +10,7 @@
 #   ./setup.sh stop                    # 停止并删除容器（宿主恢复原状）
 #
 # 环境变量:
-#   MF_RENDER_IMAGE   镜像名（默认 mf-render:0.2.3）
+#   MF_RENDER_IMAGE   镜像名（默认 mf-render:0.3.0）
 #   MF_RENDER_DATA    数据卷目录（默认 /srv/mf-render）
 #   MF_RENDER_PORT    监听端口（默认 7788）
 #
@@ -19,7 +19,7 @@
 # =============================================================
 set -euo pipefail
 
-IMAGE="${MF_RENDER_IMAGE:-mf-render:0.2.3}"
+IMAGE="${MF_RENDER_IMAGE:-mf-render:0.3.0}"
 DATA_DIR="${MF_RENDER_DATA:-/srv/mf-render}"
 PORT="${MF_RENDER_PORT:-7788}"
 CONTAINER="mf-render"
