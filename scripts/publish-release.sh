@@ -56,10 +56,11 @@ if [ -f "$TMP/${TARGETS[0]}.tar.gz" ]; then
   ( cd "$TMP" && md5 *.tar.gz > md5sums.txt )
   echo -n "$VERSION" > "$TMP/VERSION"
   ssh -o BatchMode=yes "$SERVER" "mkdir -p '$REMOTE_DIR'"
-  scp -q "$TMP"/*.tar.gz "$TMP/md5sums.txt" "$TMP/VERSION" "$SERVER:$REMOTE_DIR/"
+  scp -q "$TMP"/*.tar.gz "$TMP/md5sums.txt" "$TMP/VERSION" "$TMP/install.sh" "$SERVER:$REMOTE_DIR/"
 else
   # 服务器端拉取：校验与 VERSION 直接在服务器生成
   ssh -o BatchMode=yes "$SERVER" "cd '$REMOTE_DIR' && md5sum *.tar.gz > md5sums.txt && printf '%s' '${VERSION}' > VERSION"
+  scp -q install.sh "$SERVER:$REMOTE_DIR/install.sh"
 fi
 
 echo "==> 验证镜像"
