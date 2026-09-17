@@ -5,12 +5,15 @@ English | [中文](./README.md)
 Turn a **reference article** into a ready-to-publish content pack: viral rewrite + AI cover image + two-host podcast audio + final video (with subtitles) — all from a single command.
 
 ```
-Reference ──► ① Rewrite (viral copy) ──► ② Image (cover) ──► ③ Podcast (2 hosts) ──► ④ Video (image + audio + subs)
+Reference ──► ① Rewrite ──► ② Image ──► ③ Podcast (2 hosts) ──► ④ Scenes (visual script) ──► ⑤ Video
 ```
+
+Two video modes: **dynamic explainer visuals** synced to the audio (needs one compute machine), or **static cover video** (fastest, single machine).
 
 ## Core Features
 
-- **4-step automated pipeline** — Article in, `copy + image + podcast + video` out. Run everything at once, or execute any single step and resume after failures
+- **5-step automated pipeline** — Article in, `copy + image + podcast + scenes + video` out. Run everything at once, or execute any single step and resume after failures
+- **Dynamic explainer visuals** — Auto-generate visuals synced **segment-by-segment** with the audio (bullet cards / metric cards / bar charts / quotes / chapter slides). Aspect ratio follows the cover image (9:16 / 16:9 / 1:1), with a dedicated portrait layout; switch back to a static cover video anytime
 - **Agent thinking-chain visualization** — The web UI streams what the backend is doing at every step (reading input → calling model → producing artifact), as transparent as watching an AI agent work
 - **Fully editable intermediates** — Every artifact (rewritten copy / podcast script) is previewable, **editable and saveable**; downstream steps automatically use your edits. Any step can be **re-run** with previous inputs prefilled, artifacts refresh in place, and downstream steps get an "upstream updated" hint
 - **Pluggable providers** — LLM (built-in pi / any OpenAI-compatible such as Deepseek), image (Gemini / OpenAI-compatible), podcast (Volcano "Podcast TTS" model) — mix and match via wizard or web panel
@@ -56,6 +59,8 @@ Manual: install [Rust](https://rustup.rs), then `cargo build --release`.
 | ffmpeg | podcast / video steps | `brew install ffmpeg` / `apt install ffmpeg` / `winget install ffmpeg` |
 | pi | default LLM (replaceable with custom providers) | `npm install -g @earendil-works/pi-coding-agent` |
 
+> Dynamic explainer visuals additionally need one compute machine (Docker-deployed render worker, see below). Neither end users nor the server need Node/Chromium installed.
+
 ## Quick Start (3 steps)
 
 ```bash
@@ -72,7 +77,7 @@ Or pure CLI:
 
 ```bash
 media-factory run input.md --disclaimer --size portrait
-# Step by step: rewrite / image / podcast / video — artifacts in output/<task-id>/
+# Step by step: rewrite / image / podcast / scenes / video — artifacts in output/<task-id>/
 ```
 
 <details>
@@ -82,6 +87,8 @@ media-factory run input.md --disclaimer --size portrait
 - **Step cards, three states**: input (optional per-step settings) → thinking (streaming logs) → done (inline artifacts: editable text, zoomable image, playable audio/video)
 - **Re-run**: per-step "↻ Re-run" prefills previous inputs; top-bar "↻ Re-run all" reruns the pipeline; artifacts refresh in place
 - **Image options**: prompt + 📎 multiple reference images + size + disclaimer checkbox — all per-task
+- **Scenes card**: pick the visual mode (dynamic explainer / static cover); the generated `scene.json` is editable — re-run the video step after edits
+- **Render progress**: in dynamic mode the compute machine's live progress (download → render % → mux → upload) streams into the card
 
 </details>
 
@@ -103,6 +110,67 @@ Resume after failure: `media-factory podcast --id <task-id>` (upstream artifacts
 
 </details>
 
+## Dynamic explainer visuals (optional)
+
+By default the video is "cover image + audio + subtitles". With dynamic mode enabled, the pipeline gains a **Scenes** step that produces visuals synced **segment-by-segment** with the audio.
+
+```
+Rewrite → Image → Podcast → Scenes → Video
+                              │        │
+                        scene.json     dynamic visuals + audio + subtitles
+                        (editable)
+```
+
+**Quality guarantees**
+
+| Mechanism | Description |
+|---|---|
+| Zero timeline drift | Scene boundaries snap to subtitle timestamps (never model-estimated) |
+| No stale visuals | Scenes must cover **every** subtitle segment; uncovered spans get a synthesized quote card from that exact transcript |
+| No invented numbers | Metric/chart numbers must exist in the transcript (Chinese numerals supported), otherwise the scene degrades to a bullet card |
+| Aspect follows the cover | 9:16 → 1080×1920, 16:9 → 1920×1080, 1:1 → 1080×1080; portrait gets a dedicated layout |
+| Never breaks delivery | If the render machine is unavailable or times out → automatic fallback to static cover video |
+
+Scene types: cover / chapter / bullets / metric (count-up) / bar chart / quote / end.
+
+### Enabling
+
+- **Web UI**: on the **Scenes** card pick "dynamic explainer"
+- **Default**: ⚙ config panel → "Video"; or edit the config file (below)
+
+### Compute machine (render worker)
+
+Dynamic rendering needs CPU (Chromium renders frame by frame). It runs in a **Docker container** and leaves the host untouched:
+
+```bash
+# 1) Build the image on a machine with Docker Hub access (see scripts/render-worker/Dockerfile)
+cd scripts/render-worker && docker build --platform linux/amd64 -t mf-render:0.3.3 .
+
+# 2) Ship it to the compute machine and start (~2.7GB, ~1 min over LAN)
+docker save mf-render:0.3.3 | gzip -1 | ssh <host> 'gunzip | sudo docker load'
+ssh <host> 'sudo docker run -d --name mf-render --restart unless-stopped \
+  -p 7788:7788 -v /srv/mf-render:/data \
+  -e HTTP_PROXY= -e HTTPS_PROXY= mf-render:0.3.3'
+```
+
+Server config (`~/.media-factory/config.yaml`):
+
+```yaml
+video:
+  mode: dynamic                 # dynamic | cover
+  dynamic:
+    renderer_url: http://<compute-host>:7788
+    callback_base: http://<this-server-public-url>:8092   # worker downloads media & uploads results here
+    token: <must match /data/render-token on the worker>
+    fps: 24                     # 24 | 30
+    quality: looks              # draft | looks | delivery
+    on_unavailable: cover       # cover = deliver static video | queue = wait for the worker
+```
+
+> After a successful upload the worker **deletes its local video and intermediates** (only the server keeps them).
+> Measured: a 4.4-minute audio renders in ~1–1.5 minutes on a 32-thread machine.
+> Full deployment/upgrade/self-check guide: [`scripts/render-worker/README.md`](scripts/render-worker/README.md).
+
 ## Configuration (`~/.media-factory/config.yaml`)
 
 - **LLM**: default `pi` (authenticate with `pi auth login`); or any OpenAI-compatible provider (e.g. Deepseek: BaseURL + API key + model)
@@ -120,7 +188,8 @@ output/<task-id>/
   ├── image.png                 # cover image
   ├── script.md                 # podcast script (mode B / TTS)
   ├── podcast.mp3 / subtitle.srt# audio / subtitles
-  └── video.mp4                 # final video
+  ├── scene.json                # scene script (dynamic mode, editable → re-render)
+  └── video.mp4                 # final video (dynamic visuals or static cover)
 ```
 
 ## Platform Support
@@ -134,7 +203,7 @@ output/<task-id>/
 ## Development
 
 ```bash
-cargo test    # 41 tests (protocol wiremock / real ffmpeg muxing / e2e pipeline)
+cargo test    # 67 tests (protocol wiremock / real ffmpeg muxing / scene coverage / e2e pipeline)
 cargo clippy  # 0 warnings
 media-factory serve --restart   # manage web service: --stop / --restart / --status
 ```
