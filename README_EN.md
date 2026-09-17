@@ -101,9 +101,11 @@ media-factory run <input> [--id ID] [--ref IMG]... [--prompt S] [--image-prompt 
 media-factory rewrite <input> [--prompt S]
 media-factory image   [--id ID] [--ref IMG]... [--prompt S] [--disclaimer] [--size ...]
 media-factory podcast [--id ID] [--script] [--prompt S]
-media-factory video   [--id ID]
+media-factory scenes  [--id ID]                 # build scene.json (dynamic visuals)
+media-factory video   [--id ID]                 # compose video (dynamic / cover per config)
 media-factory config      # interactive wizard
 media-factory serve       # web server (background; --port sets port, --foreground for debugging)
+media-factory render-server --port 7788 --home /data   # render service for the compute machine
 ```
 
 Resume after failure: `media-factory podcast --id <task-id>` (upstream artifacts are on disk).
