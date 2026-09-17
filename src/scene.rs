@@ -566,67 +566,85 @@ pub struct ResolvedScene {
     pub index: usize,
     #[allow(dead_code)]
     pub kind: String,
+    /// 最终时间窗口（首段起点为 0，段间无空隙，末段延伸到音频结束）；测试与诊断使用
+    #[allow(dead_code)]
     pub start: f64,
+    #[allow(dead_code)]
     pub end: f64,
     pub html: String,
     pub data: serde_json::Value,
 }
 
-/// 把条目索引换算为秒：场景起点取首条字幕开始，终点取末条字幕结束；
-/// 与下一个场景之间的空隙由前一个场景填满，保证画面连续。
+/// 把条目索引换算为秒。
+///
+/// **两遍处理**：先算出所有场景的最终时间窗口（首段从 0 开始、段间空隙由前一段填满、
+/// 末段延伸到音频结束），再用最终窗口生成 HTML 与动画数据。
+/// 若先生成 HTML 再填隙，会导致 HTML 片段窗口之间留下空档 → **黑屏**。
 pub fn resolve(plan: &ScenePlan, entries: &[SubtitleEntry]) -> Vec<ResolvedScene> {
     let last = entries.len().saturating_sub(1);
     let total = entries.get(last).map(|e| e.end).unwrap_or(0.0);
-    let mut out = Vec::with_capacity(plan.scenes.len());
+    let n = plan.scenes.len();
+    if n == 0 {
+        return Vec::new();
+    }
 
-    for (i, sc) in plan.scenes.iter().enumerate() {
+    // 第一遍：由字幕索引得到窗口骨架
+    let mut wins: Vec<(f64, f64)> = Vec::with_capacity(n);
+    for sc in &plan.scenes {
         let (f, t) = sc.range();
         let f = f.min(last);
         let t = t.min(last).max(f);
-        let start = entries[f].start;
-        let end = entries[t].end;
-        out.push(ResolvedScene {
-            index: i,
-            kind: sc.kind().to_string(),
-            start,
-            end,
-            html: scene_html(i, sc, entries),
-            data: scene_data(i, sc, start, end),
-        });
+        wins.push((entries[f].start, entries[t].end));
     }
 
-    // 填满空隙：每个场景延伸到下一个场景开始；最后一个到总时长
-    for i in 0..out.len() {
-        let next_start = out.get(i + 1).map(|s| s.start).unwrap_or(total);
-        if out[i].end < next_start {
-            out[i].end = next_start;
-        }
-        let end_val = out[i].end;
-        if let Some(val) = out[i].data.as_object_mut() {
-            val.insert("end".into(), serde_json::json!(end_val));
+    // 首段从 0 开始
+    if let Some(w) = wins.first_mut() {
+        if w.0 > 0.0 {
+            w.0 = 0.0;
         }
     }
-    // 首个场景从 0 开始
-    if let Some(first) = out.first_mut() {
-        if first.start > 0.0 {
-            first.start = 0.0;
-            if let Some(val) = first.data.as_object_mut() {
-                val.insert("start".into(), serde_json::json!(0.0));
+    // 段间无空隙：前一段延伸到后一段开始；末段延伸到总时长
+    for i in 0..n {
+        let next_start = if i + 1 < n { wins[i + 1].0 } else { total };
+        if wins[i].1 < next_start {
+            wins[i].1 = next_start;
+        }
+        if wins[i].1 > next_start {
+            wins[i].1 = next_start; // 防重叠
+        }
+        if wins[i].1 <= wins[i].0 {
+            wins[i].1 = wins[i].0 + 0.1; // 兜底最短可见时长
+        }
+    }
+    if let Some(w) = wins.last_mut() {
+        if w.1 < total {
+            w.1 = total;
+        }
+    }
+
+    // 第二遍：用最终窗口生成 HTML 与动画数据
+    plan.scenes
+        .iter()
+        .enumerate()
+        .map(|(i, sc)| {
+            let (start, end) = wins[i];
+            ResolvedScene {
+                index: i,
+                kind: sc.kind().to_string(),
+                start,
+                end,
+                html: scene_html(i, sc, start, end),
+                data: scene_data(i, sc, start, end),
             }
-        }
-    }
-    out
+        })
+        .collect()
 }
 
 fn esc(s: &str) -> String {
     s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
 }
 
-fn scene_html(index: usize, sc: &Scene, entries: &[SubtitleEntry]) -> String {
-    let (f, t) = sc.range();
-    let t = t.min(entries.len().saturating_sub(1));
-    let start = entries.get(f.min(t)).map(|e| e.start).unwrap_or(0.0);
-    let end = entries.get(t).map(|e| e.end).unwrap_or(start);
+fn scene_html(index: usize, sc: &Scene, start: f64, end: f64) -> String {
     let open = |class: &str| {
         format!(
             "<section id=\"s{index}\" class=\"scene clip {class}\" data-start=\"{start:.3}\" data-duration=\"{dur:.3}\" data-track-index=\"{ti}\">",
@@ -634,7 +652,7 @@ fn scene_html(index: usize, sc: &Scene, entries: &[SubtitleEntry]) -> String {
             class = class,
             start = start,
             dur = (end - start).max(0.1),
-            ti = index
+            ti = index + 1
         )
     };
     let close = "</section>";
@@ -930,5 +948,130 @@ mod tests {
         assert!(html.contains("id=\"s1\""));
         assert!(html.contains("以上内容仅代表个人观点。"));
         assert!(html.contains("value_num"));
+    }
+}
+
+#[cfg(test)]
+mod gap_tests {
+    use super::*;
+
+    fn entries_with_gaps() -> Vec<SubtitleEntry> {
+        // 6 段字幕，场景只覆盖 [0]、[2]、[5] → 存在索引空隙 1、3-4
+        vec![
+            SubtitleEntry { start: 0.0, end: 4.0, text: "开场".into() },
+            SubtitleEntry { start: 4.0, end: 8.0, text: "过渡 1".into() },
+            SubtitleEntry { start: 8.0, end: 14.0, text: "要点".into() },
+            SubtitleEntry { start: 14.0, end: 20.0, text: "过渡 2".into() },
+            SubtitleEntry { start: 20.0, end: 26.0, text: "过渡 3".into() },
+            SubtitleEntry { start: 26.0, end: 34.0, text: "结尾".into() },
+        ]
+    }
+
+    /// 解析 HTML 中所有片段窗口 <(start, start+duration)>
+    fn clip_windows(html: &str) -> Vec<(f64, f64)> {
+        let mut out = Vec::new();
+        for seg in html.split("<section").skip(1) {
+            let get = |key: &str| -> Option<f64> {
+                let i = seg.find(key)?;
+                let rest = &seg[i + key.len()..];
+                let v: String = rest
+                    .chars()
+                    .take_while(|c| c.is_ascii_digit() || *c == '.')
+                    .collect();
+                v.parse().ok()
+            };
+            if let (Some(s), Some(d)) = (get("data-start=\""), get("data-duration=\"")) {
+                out.push((s, s + d));
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn no_black_gaps_between_scenes_html_windows() {
+        let e = entries_with_gaps();
+        let plan = ScenePlan {
+            version: 1,
+            style: "dark-tech".into(),
+            meta: SceneMeta::default(),
+            scenes: vec![
+                Scene::Cover { from_entry: 0, to_entry: 0, title: "开场".into(), subtitle: String::new() },
+                Scene::Bullets { from_entry: 2, to_entry: 2, heading: "要点".into(), items: vec!["甲".into()] },
+                Scene::End { from_entry: 5, to_entry: 5, title: "结尾".into(), subtitle: String::new() },
+            ],
+        };
+        let html = build_composition(
+            &plan,
+            &e,
+            &CompositionOpts { width: 1080, height: 1920, fps: 24, disclaimer: None },
+        );
+        let w = clip_windows(&html);
+        assert_eq!(w.len(), 3, "应生成 3 个场景片段");
+        assert!((w[0].0 - 0.0).abs() < 1e-6, "首段应从 0 开始，实际 {}", w[0].0);
+        for i in 0..w.len() - 1 {
+            let gap = w[i + 1].0 - w[i].1;
+            assert!(
+                gap.abs() < 0.05,
+                "片段 {i} 与 {} 之间存在 {gap:.1}s 空隙（会导致黑屏）: {:?} → {:?}",
+                i + 1,
+                w[i],
+                w[i + 1]
+            );
+        }
+        let total = e.last().unwrap().end;
+        assert!((w.last().unwrap().1 - total).abs() < 0.05, "末段应延伸到音频结束");
+    }
+
+    #[test]
+    fn resolve_windows_are_contiguous_and_cover_total() {
+        let e = entries_with_gaps();
+        let plan = ScenePlan {
+            version: 1,
+            style: String::new(),
+            meta: SceneMeta::default(),
+            scenes: vec![
+                Scene::Cover { from_entry: 0, to_entry: 0, title: "a".into(), subtitle: String::new() },
+                Scene::Quote { from_entry: 2, to_entry: 2, text: "b".into(), speaker: String::new() },
+                Scene::End { from_entry: 5, to_entry: 5, title: "c".into(), subtitle: String::new() },
+            ],
+        };
+        let r = resolve(&plan, &e);
+        for i in 0..r.len() - 1 {
+            assert!((r[i].end - r[i + 1].start).abs() < 1e-6, "第 {i} 段未衔接");
+        }
+        assert!((r.last().unwrap().end - e.last().unwrap().end).abs() < 1e-6);
+    }
+}
+
+#[cfg(test)]
+mod dump {
+    /// 导出 composition 到 /tmp/gen 供诊断（hyperframes validate / inspect）
+    #[test]
+    fn dump_composition_for_debug() {
+        let entries = vec![
+            super::SubtitleEntry { start: 0.0, end: 6.0, text: "开场".into() },
+            super::SubtitleEntry { start: 6.0, end: 20.0, text: "要点一".into() },
+            super::SubtitleEntry { start: 20.0, end: 34.0, text: "要点二".into() },
+            super::SubtitleEntry { start: 34.0, end: 48.0, text: "结尾".into() },
+        ];
+        let plan = super::ScenePlan {
+            version: 1,
+            style: "dark-tech".into(),
+            meta: super::SceneMeta { title: "调试".into(), total_duration: 48.0 },
+            scenes: vec![
+                super::Scene::Cover { from_entry: 0, to_entry: 0, title: "调试标题".into(), subtitle: "副标题".into() },
+                super::Scene::Bullets { from_entry: 1, to_entry: 1, heading: "三个要点".into(), items: vec!["甲".into(), "乙".into(), "丙".into()] },
+                super::Scene::Metric { from_entry: 2, to_entry: 2, value: "10".into(), unit: "亿".into(), label: "用户规模".into(), note: String::new(), source_quote: String::new() },
+                super::Scene::End { from_entry: 3, to_entry: 3, title: "完".into(), subtitle: String::new() },
+            ],
+        };
+        let html = super::build_composition(
+            &plan,
+            &entries,
+            &super::CompositionOpts { width: 1080, height: 1920, fps: 24, disclaimer: Some("免责声明".into()) },
+        );
+        std::fs::create_dir_all("/tmp/gen").unwrap();
+        std::fs::write("/tmp/gen/index.html", html).unwrap();
+        println!("已导出 /tmp/gen/index.html");
     }
 }

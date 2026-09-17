@@ -15,7 +15,22 @@
   html, body { width:var(--W); height:var(--H); overflow:hidden; background:#0c0d11; }
   body { font-family:"Noto Sans CJK SC","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
          -webkit-font-smoothing:antialiased; }
-  .scene { position:absolute; inset:0; overflow:hidden; }
+  /* 全程背景层：即使片段衔接出现意外也不会是纯黑 */
+  #bg { position:absolute; inset:0; z-index:0;
+        background: radial-gradient(1200px 800px at 50% 32%, #171a2b 0%, #0c0d11 72%),
+                    linear-gradient(160deg, #101322 0%, #0c0d11 60%); }
+  /* 细微网格纹理：让深色背景有质感、不显得空 */
+  #bg::after { content:""; position:absolute; inset:0; opacity:.5;
+    background-image: linear-gradient(rgba(110,123,255,.045) 1px, transparent 1px),
+                      linear-gradient(90deg, rgba(110,123,255,.045) 1px, transparent 1px);
+    background-size: calc(var(--S)*.06) calc(var(--S)*.06);
+    mask-image: radial-gradient(circle at 50% 45%, #000 35%, transparent 78%);
+    -webkit-mask-image: radial-gradient(circle at 50% 45%, #000 35%, transparent 78%); }
+  /* 装饰性光晕 */
+  #bg::before { content:""; position:absolute; left:50%; top:38%; width:calc(var(--S)*1.1);
+    height:calc(var(--S)*1.1); transform:translate(-50%,-50%); border-radius:50%;
+    background:radial-gradient(circle, rgba(110,123,255,.10) 0%, rgba(110,123,255,0) 62%); }
+  .scene { position:absolute; inset:0; overflow:hidden; z-index:1; }
 
   /* 常驻免责声明 */
   #disc { position:absolute; top:calc(var(--S)*.033); right:calc(var(--S)*.044); z-index:40; color:#fbbf24; font-size:calc(var(--S)*.0204);
@@ -38,17 +53,18 @@
   /* ---- chapter 章节 ---- */
   .chapter { background:radial-gradient(1100px 700px at 30% 45%, #171a2b 0%, #0c0d11 72%);
              display:flex; flex-direction:column; justify-content:center; padding:0 calc(var(--S)*.13); }
-  .chapter .idx { font-family:ui-monospace,monospace; color:#6e7bff; font-size:calc(var(--S)*.041); font-weight:700; letter-spacing:calc(var(--S)*.002); }
-  .chapter h2 { font-size:calc(var(--S)*.0815); margin-top:calc(var(--S)*.017); }
+  .chapter .idx { font-family:ui-monospace,monospace; color:#6e7bff; font-size:calc(var(--S)*.046); font-weight:700; letter-spacing:calc(var(--S)*.002); }
+  .chapter h2 { font-size:calc(var(--S)*.088); margin-top:calc(var(--S)*.017); }
   .chapter .rule { width:calc(var(--S)*.102); height:calc(var(--S)*.0056); background:#6e7bff; border-radius:calc(var(--S)*.003); margin-top:calc(var(--S)*.028); }
 
   /* ---- bullets 要点 ---- */
-  .bullets { background:#0c0d11; padding:calc(var(--S)*.12) calc(var(--S)*.12) 0; }
+  .bullets { background:#0c0d11; display:flex; flex-direction:column; justify-content:center;
+             padding:calc(var(--H)*.08) calc(var(--S)*.10) calc(var(--H)*.17); }
   .bullets h2 { font-size:calc(var(--S)*.0593); }
   .bullets h2::after { content:""; display:block; width:calc(var(--S)*.083); height:calc(var(--S)*.0056); background:#6e7bff; margin-top:calc(var(--S)*.020); border-radius:calc(var(--S)*.003); }
-  .bullets ul { list-style:none; margin-top:calc(var(--S)*.059); }
-  .bullets li { display:flex; align-items:baseline; gap:calc(var(--S)*.022); color:#e8eaee; font-size:calc(var(--S)*.041); font-weight:500;
-                padding:calc(var(--S)*.024) 0; border-bottom:1px solid rgba(255,255,255,.08); }
+  .bullets ul { list-style:none; margin-top:calc(var(--S)*.055); }
+  .bullets li { display:flex; align-items:baseline; gap:calc(var(--S)*.022); color:#e8eaee; font-size:calc(var(--S)*.045); font-weight:500;
+                padding:calc(var(--S)*.030) 0; border-bottom:1px solid rgba(255,255,255,.08); }
   .bullets li .n { color:#6e7bff; font-size:calc(var(--S)*.0315); font-weight:700; font-family:ui-monospace,monospace; }
 
   /* ---- metric 数据卡 ---- */
@@ -56,7 +72,7 @@
             display:flex; flex-direction:column; align-items:center; justify-content:center; }
   .metric .ring2 { position:absolute; width:calc(var(--S)*.907); height:calc(var(--S)*.907); border-radius:50%; border:1px dashed rgba(110,123,255,.14); }
   .metric .ring  { position:absolute; width:calc(var(--S)*.704); height:calc(var(--S)*.704); border-radius:50%; border:2px solid rgba(110,123,255,.25); }
-  .metric .num { color:#fff; font-size:calc(var(--S)*.222); font-weight:800; letter-spacing:calc(var(--S)*-.0056); line-height:1;
+  .metric .num { color:#fff; font-size:calc(var(--S)*.26); font-weight:800; letter-spacing:calc(var(--S)*-.0056); line-height:1;
                  font-variant-numeric:tabular-nums; z-index:2; }
   .metric .num .unit { color:#6e7bff; font-size:calc(var(--S)*.13); font-weight:700; }
   .metric .label { color:#e8eaee; font-size:calc(var(--S)*.048); margin-top:calc(var(--S)*.026); z-index:2; }
@@ -70,10 +86,11 @@
   .quote .who { color:#8b90a0; font-size:calc(var(--S)*.0315); margin-top:calc(var(--S)*.033); }
 
   /* ---- chart 图表 ---- */
-  .chart { background:#0c0d11; padding:calc(var(--S)*.111) calc(var(--S)*.12) 0; }
+  .chart { background:#0c0d11; display:flex; flex-direction:column; justify-content:center;
+           padding:calc(var(--H)*.08) calc(var(--S)*.10) calc(var(--H)*.15); }
   .chart h2 { font-size:calc(var(--S)*.0556); }
   .chart .unit { color:#8b90a0; font-size:calc(var(--S)*.028); margin-top:calc(var(--S)*.009); }
-  .chart .bars { display:flex; align-items:flex-end; gap:calc(var(--S)*.065); height:calc(var(--S)*.556); margin-top:calc(var(--S)*.065); }
+  .chart .bars { display:flex; align-items:flex-end; gap:calc(var(--S)*.065); height:calc(var(--H)*.40); margin-top:calc(var(--S)*.055); }
   .chart .bar { flex:1; display:flex; flex-direction:column; justify-content:flex-end; align-items:center;
                 height:100%; transform-origin:bottom; }
   .chart .bar i { display:block; width:100%; background:linear-gradient(180deg,#6e7bff,#4b56d6); border-radius:calc(var(--S)*.011) calc(var(--S)*.011) 0 0; }
@@ -86,20 +103,32 @@
          display:flex; flex-direction:column; align-items:center; justify-content:center; }
   .end h2 { font-size:calc(var(--S)*.0704); text-align:center; }
   .end .sub { color:#8b90a0; font-size:calc(var(--S)*.0333); margin-top:calc(var(--S)*.028); }
-  /* 竖屏（9:16 等）微调：横向内边距收窄、纵向留白加大 */
+  /* 竖屏（9:16 等）：内容撑满画面、字号按可用宽度放大、底部给字幕留足空间 */
   @media (max-aspect-ratio: 1/1) {
-    .bullets { padding:calc(var(--S)*.09) calc(var(--S)*.085) 0; }
+    .bullets { padding:calc(var(--H)*.10) calc(var(--S)*.085) calc(var(--H)*.19); }
+    .bullets h2 { font-size:calc(var(--S)*.082); }
     .bullets ul { margin-top:calc(var(--S)*.075); }
-    .bullets li { font-size:calc(var(--S)*.043); }
+    .bullets li { font-size:calc(var(--S)*.058); padding:calc(var(--S)*.040) 0; gap:calc(var(--S)*.030); }
+    .bullets li .n { font-size:calc(var(--S)*.041); }
     .chapter { padding:0 calc(var(--S)*.10); }
+    .chapter h2 { font-size:calc(var(--S)*.105); }
     .quote { padding:0 calc(var(--S)*.12); }
-    .quote blockquote { font-size:calc(var(--S)*.060); }
-    .chart { padding:calc(var(--S)*.10) calc(var(--S)*.09) 0; }
-    .chart .bars { height:calc(var(--S)*.46); gap:calc(var(--S)*.05); }
-    .metric .num { font-size:calc(var(--S)*.20); }
-    .cover h1 { bottom:calc(var(--S)*.32); }
-    .cover .sub { bottom:calc(var(--S)*.25); }
-    .cover .bar { bottom:calc(var(--S)*.275); }
+    .quote blockquote { font-size:calc(var(--S)*.078); line-height:1.45; }
+    .quote .who { font-size:calc(var(--S)*.038); }
+    .chart { padding:calc(var(--H)*.09) calc(var(--S)*.09) calc(var(--H)*.18); }
+    .chart h2 { font-size:calc(var(--S)*.066); }
+    .chart .bars { height:calc(var(--H)*.36); gap:calc(var(--S)*.05); }
+    .chart .bar .bv { font-size:calc(var(--S)*.042); }
+    .chart .bar .bl { font-size:calc(var(--S)*.036); }
+    .metric .num { font-size:calc(var(--S)*.30); }
+    .metric .num .unit { font-size:calc(var(--S)*.17); }
+    .metric .label { font-size:calc(var(--S)*.058); }
+    .metric .note { font-size:calc(var(--S)*.032); }
+    .cover h1 { bottom:calc(var(--H)*.28); font-size:calc(var(--S)*.088); }
+    .cover .sub { bottom:calc(var(--H)*.22); font-size:calc(var(--S)*.040); }
+    .cover .bar { bottom:calc(var(--H)*.245); }
+    .end h2 { font-size:calc(var(--S)*.085); }
+    .end .sub { font-size:calc(var(--S)*.040); }
   }
 </style>
 </head>
@@ -112,6 +141,7 @@
      data-height="__HEIGHT__"
      data-fps="__FPS__">
 
+  <div id="bg" class="clip" data-start="0" data-duration="__DURATION__" data-track-index="0"></div>
   <div id="disc" class="clip" data-start="0" data-duration="__DURATION__" data-track-index="90">__DISCLAIMER__</div>
 
 __SCENES__
