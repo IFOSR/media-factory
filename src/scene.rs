@@ -4,10 +4,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::podcast::SubtitleEntry;
 
-/// 场景数量上限（长音频抽稀，避免全程动个不停）
-pub const MAX_SCENES: usize = 24;
+/// 场景数量上限。
+/// 注意：过小会导致大量场景被丢弃 → 前一个画面被迫覆盖后面对话 → **内容与音频脱节**。
+/// 取值使长音频仍能保持约 8~12 秒一个画面锚点。
+pub const MAX_SCENES: usize = 60;
 /// 单个场景最短时长（秒），过短的场景会与相邻场景合并
 pub const MIN_SCENE_SECONDS: f64 = 4.0;
+/// 空洞容忍：不大于该秒数的空洞并入前一个场景；更大的空洞会**按该段原文合成场景**
+pub const GAP_FILL_MAX_SECONDS: f64 = 7.0;
 
 const COMPOSITION_TEMPLATE: &str = include_str!("templates/explainer.html");
 
@@ -435,21 +439,7 @@ pub fn sanitize(plan: &mut ScenePlan, entries: &[SubtitleEntry]) -> Vec<String> 
         warnings.push("LLM 未返回场景，已用封面场景兜底".to_string());
     }
 
-    // 4. 覆盖连续性：上一场景结束处若早于下一场景开始，则把上一场景延伸过去
-    let n = plan.scenes.len();
-    for i in 0..n {
-        let (_, to) = plan.scenes[i].range();
-        if i + 1 < n {
-            let (nf, _) = plan.scenes[i + 1].range();
-            if to + 1 < nf {
-                // 中间有空洞：把当前场景延伸到下一场景开始前一条
-                let (f, _) = plan.scenes[i].range();
-                plan.scenes[i].set_range(f, nf.saturating_sub(1));
-            }
-        }
-    }
-
-    // 5. 过短场景合并（仅合并相邻且同类型）
+    // 4. 过短场景合并（仅合并相邻且同类型）
     let mut merged: Vec<Scene> = Vec::new();
     for sc in plan.scenes.drain(..) {
         let (f, t) = sc.range();
@@ -489,6 +479,18 @@ pub fn sanitize(plan: &mut ScenePlan, entries: &[SubtitleEntry]) -> Vec<String> 
         }
         warnings.push(format!("场景数超过上限 {MAX_SCENES}，已抽稀至 {}", kept.len()));
         plan.scenes = kept;
+    }
+
+    // 6.5 空洞补齐：抽稀/合并后可能留下未覆盖的条目区间。
+    //     小空洞并入前一个场景；大空洞**按该段原文合成一张金句卡**，
+    //     避免"画面内容与正在讲的音频脱节"。
+    let before = plan.scenes.len();
+    plan.scenes = fill_gaps(std::mem::take(&mut plan.scenes), entries, &mut warnings);
+    if plan.scenes.len() > before {
+        warnings.push(format!(
+            "为 {} 处未覆盖的对话补了画面（避免画面与音频脱节）",
+            plan.scenes.len() - before
+        ));
     }
 
     // 7. 数字校验（数据类场景必须能从原文中找到数字）
@@ -557,6 +559,113 @@ pub fn sanitize(plan: &mut ScenePlan, entries: &[SubtitleEntry]) -> Vec<String> 
 
 impl SceneMeta {
     fn scene_count(&self) {}
+}
+
+/// 空洞补齐：保证场景在**条目维度连续覆盖**（0..last 无遗漏）。
+///
+/// - 小空洞（≤ GAP_FILL_MAX_SECONDS 秒，或仅 1~2 段）并入前一个场景
+/// - 大空洞按该段原文合成一张金句卡（内容来自该时段真实对话，画面与音频不脱节）
+fn fill_gaps(scenes: Vec<Scene>, entries: &[SubtitleEntry], warnings: &mut Vec<String>) -> Vec<Scene> {
+    let last = entries.len().saturating_sub(1);
+    let mut out: Vec<Scene> = Vec::new();
+    let mut cursor = 0usize;
+    let total_in = scenes.len();
+
+    for (idx, mut sc) in scenes.into_iter().enumerate() {
+        // 预算：还要为后面 (total_in - idx - 1) 个场景留位置
+        let budget_left = MAX_SCENES.saturating_sub(out.len() + (total_in - idx - 1) + 1);
+        let can_synthesize = budget_left > 0;
+        let (mut f, t) = sc.range();
+        f = f.min(last);
+        let t = t.min(last).max(f);
+
+        // 头部空洞：首个场景之前未覆盖的段落
+        if f > cursor {
+            if out.is_empty() {
+                let gap_secs = entries[f - 1].end - entries[cursor].start;
+                if gap_secs > GAP_FILL_MAX_SECONDS && can_synthesize {
+                    if let Some(g) = synthesize_gap_scene(entries, cursor, f - 1) {
+                        out.push(g);
+                    } else {
+                        f = cursor; // 无法合成则让首个场景从 0 开始
+                    }
+                } else {
+                    f = cursor;
+                }
+            } else {
+                // 理论上不会发生（场景有序），保险处理
+                let (pf, _) = out.last().unwrap().range();
+                out.last_mut().unwrap().set_range(pf, f - 1);
+            }
+        }
+
+        if f > cursor {
+            // 中间空洞
+            let gap_secs = entries[f - 1].end - entries[cursor].start;
+            if f - cursor <= 2 || gap_secs <= GAP_FILL_MAX_SECONDS {
+                if let Some(prev) = out.last_mut() {
+                    let (pf, _) = prev.range();
+                    prev.set_range(pf, f - 1);
+                }
+            } else if can_synthesize {
+                if let Some(g) = synthesize_gap_scene(entries, cursor, f - 1) {
+                    out.push(g);
+                } else if let Some(prev) = out.last_mut() {
+                    let (pf, _) = prev.range();
+                    prev.set_range(pf, f - 1);
+                }
+            } else if let Some(prev) = out.last_mut() {
+                // 已达场景上限：不再新增，并入前一个场景
+                let (pf, _) = prev.range();
+                prev.set_range(pf, f - 1);
+            }
+        }
+
+        sc.set_range(f, t);
+        out.push(sc);
+        cursor = t + 1;
+    }
+
+    // 尾部空洞：延伸最后一个场景（结尾一般无需再补画面）
+    if cursor <= last {
+        if let Some(prev) = out.last_mut() {
+            let (pf, _) = prev.range();
+            prev.set_range(pf, last);
+        } else {
+            warnings.push("分镜为空".to_string());
+        }
+    }
+    out
+}
+
+/// 依据空洞时段的真实字幕合成一张金句卡（保证画面内容与该段音频一致）
+fn synthesize_gap_scene(entries: &[SubtitleEntry], from: usize, to: usize) -> Option<Scene> {
+    let text = entries[from..=to]
+        .iter()
+        .map(|e| {
+            e.text
+                .trim_start_matches("主持人：")
+                .trim_start_matches("嘉宾：")
+                .trim()
+        })
+        .collect::<Vec<_>>()
+        .join("");
+    let sentence = text
+        .split_inclusive(['。', '！', '？', '!', '?'])
+        .next()
+        .unwrap_or(&text)
+        .trim()
+        .to_string();
+    if sentence.chars().count() < 6 {
+        return None;
+    }
+    let short: String = sentence.chars().take(42).collect();
+    Some(Scene::Quote {
+        from_entry: from,
+        to_entry: to,
+        text: short,
+        speaker: String::new(),
+    })
 }
 
 /// 已解析时间轴的场景（供 HTML 生成使用）
@@ -904,6 +1013,74 @@ mod tests {
         let _ = sanitize(&mut plan, &e);
         // 原文用中文数字"十亿"，数据卡写"10亿" → 应通过校验而非降级
         assert_eq!(plan.scenes[0].kind(), "metric");
+    }
+
+    fn entries_n(n: usize) -> Vec<SubtitleEntry> {
+        (0..n)
+            .map(|i| SubtitleEntry {
+                start: i as f64 * 3.0,
+                end: i as f64 * 3.0 + 3.0,
+                text: format!("嘉宾：这是第 {i} 句对话内容，用于测试分镜覆盖"),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn sanitize_leaves_no_uncovered_entries() {
+        // 场景只覆盖 [0]、[30-32]、[70] → 中间与尾部都有大空洞
+        let e = entries_n(100);
+        let mut plan = ScenePlan {
+            version: 1,
+            style: String::new(),
+            meta: SceneMeta::default(),
+            scenes: vec![
+                Scene::Cover { from_entry: 0, to_entry: 0, title: "开场".into(), subtitle: String::new() },
+                Scene::Bullets { from_entry: 30, to_entry: 32, heading: "要点".into(), items: vec!["甲".into()] },
+                Scene::End { from_entry: 70, to_entry: 70, title: "结尾".into(), subtitle: String::new() },
+            ],
+        };
+        let w = sanitize(&mut plan, &e);
+        // 必须完整覆盖 0..99
+        let mut covered = vec![false; e.len()];
+        for sc in &plan.scenes {
+            let (f, t) = sc.range();
+            for i in f..=t {
+                covered[i] = true;
+            }
+        }
+        assert!(covered.iter().all(|c| *c), "存在未覆盖的字幕段 → 画面会与音频脱节");
+        // 大空洞应被合成为场景（内容取自该段原文）
+        assert!(
+            plan.scenes.iter().any(|s| s.kind() == "quote"),
+            "大空洞应合成金句卡场景: {:?}",
+            plan.scenes.iter().map(|s| s.kind()).collect::<Vec<_>>()
+        );
+        assert!(!w.is_empty());
+    }
+
+    #[test]
+    fn sanitize_keeps_coverage_after_dilution() {
+        // 远超上限的场景数 → 抽稀后仍须连续覆盖
+        let e = entries_n(300);
+        let scenes: Vec<Scene> = (0..150)
+            .map(|i| Scene::Bullets {
+                from_entry: i * 2,
+                to_entry: i * 2 + 1,
+                heading: format!("H{i}"),
+                items: vec!["x".into()],
+            })
+            .collect();
+        let mut plan = ScenePlan { version: 1, style: String::new(), meta: SceneMeta::default(), scenes };
+        sanitize(&mut plan, &e);
+        assert!(plan.scenes.len() <= MAX_SCENES);
+        let mut covered = vec![false; e.len()];
+        for sc in &plan.scenes {
+            let (f, t) = sc.range();
+            for i in f..=t {
+                covered[i] = true;
+            }
+        }
+        assert!(covered.iter().all(|c| *c), "抽稀后出现未覆盖区间");
     }
 
     #[test]

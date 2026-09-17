@@ -31,7 +31,7 @@ cd scripts/render-worker
 # 取对应平台的 media-factory 二进制（示例：Linux x64）
 curl -fsSL -o /tmp/mf.tar.gz https://github.com/IFOSR/media-factory/releases/latest/download/media-factory-x86_64-unknown-linux-gnu.tar.gz
 tar xzf /tmp/mf.tar.gz -C .            # 得到 ./media-factory
-docker build --platform linux/amd64 -t mf-render:0.3.2 .
+docker build --platform linux/amd64 -t mf-render:0.3.3 .
 ```
 
 > 构建机需要能访问 Docker Hub（拉 ubuntu:24.04）与 npmmirror（Node/hyperframes/Chromium）。
@@ -40,7 +40,7 @@ docker build --platform linux/amd64 -t mf-render:0.3.2 .
 ## 二、部署到算力机
 
 ```bash
-docker save mf-render:0.3.2 | gzip -1 | ssh <算力机> 'gunzip | sudo docker load'
+docker save mf-render:0.3.3 | gzip -1 | ssh <算力机> 'gunzip | sudo docker load'
 ```
 
 实测：2.71GB 镜像经局域网传输约 **1 分 14 秒**。
@@ -54,7 +54,7 @@ sudo docker run -d --name mf-render --restart unless-stopped \
   -p 7788:7788 \
   -v /srv/mf-render:/data \
   -e HTTP_PROXY= -e HTTPS_PROXY= -e http_proxy= -e https_proxy= \
-  mf-render:0.3.2 \
+  mf-render:0.3.3 \
   /usr/local/bin/media-factory render-server --port 7788 --home /data
 '
 ```
@@ -132,6 +132,6 @@ ssh <算力机> 'sudo docker rm -f mf-render && sudo docker run -d --name mf-ren
 ## 六、清理
 
 ```bash
-ssh <算力机> 'sudo docker rm -f mf-render && sudo docker rmi mf-render:0.3.2'
+ssh <算力机> 'sudo docker rm -f mf-render && sudo docker rmi mf-render:0.3.3'
 ```
 容器删除后宿主完全恢复原状（无任何 Node/Chromium/字体残留）。
