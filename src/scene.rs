@@ -12,6 +12,8 @@ pub const MAX_SCENES: usize = 60;
 pub const MIN_SCENE_SECONDS: f64 = 4.0;
 /// 空洞容忍：不大于该秒数的空洞并入前一个场景；更大的空洞会**按该段原文合成场景**
 pub const GAP_FILL_MAX_SECONDS: f64 = 7.0;
+/// 场景片段向后延伸的秒数：与下一个场景的淡入重叠，形成交叉淡化（避免边界暗帧）
+pub const CLIP_OVERLAP_SECONDS: f64 = 0.4;
 
 const COMPOSITION_TEMPLATE: &str = include_str!("templates/explainer.html");
 
@@ -742,7 +744,7 @@ pub fn resolve(plan: &ScenePlan, entries: &[SubtitleEntry]) -> Vec<ResolvedScene
                 kind: sc.kind().to_string(),
                 start,
                 end,
-                html: scene_html(i, sc, start, end),
+                html: scene_html(i, sc, start, end, i + 1 == n),
                 data: scene_data(i, sc, start, end),
             }
         })
@@ -753,14 +755,15 @@ fn esc(s: &str) -> String {
     s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
 }
 
-fn scene_html(index: usize, sc: &Scene, start: f64, end: f64) -> String {
+fn scene_html(index: usize, sc: &Scene, start: f64, end: f64, is_last: bool) -> String {
+    let overlap = if is_last { 0.0 } else { CLIP_OVERLAP_SECONDS };
     let open = |class: &str| {
         format!(
             "<section id=\"s{index}\" class=\"scene clip {class}\" data-start=\"{start:.3}\" data-duration=\"{dur:.3}\" data-track-index=\"{ti}\">",
             index = index,
             class = class,
             start = start,
-            dur = (end - start).max(0.1),
+            dur = (end - start).max(0.1) + overlap,
             ti = index + 1
         )
     };
@@ -1187,16 +1190,26 @@ mod gap_tests {
         assert!((w[0].0 - 0.0).abs() < 1e-6, "首段应从 0 开始，实际 {}", w[0].0);
         for i in 0..w.len() - 1 {
             let gap = w[i + 1].0 - w[i].1;
+            // 允许小幅重叠（交叉淡化），但不允许出现正向空隙（会产生黑帧）
             assert!(
-                gap.abs() < 0.05,
+                gap <= 0.05,
                 "片段 {i} 与 {} 之间存在 {gap:.1}s 空隙（会导致黑屏）: {:?} → {:?}",
                 i + 1,
                 w[i],
                 w[i + 1]
             );
+            assert!(
+                gap >= -(CLIP_OVERLAP_SECONDS + 0.05),
+                "片段 {i} 与 {} 重叠过多（{:.1}s）",
+                i + 1,
+                -gap
+            );
         }
         let total = e.last().unwrap().end;
-        assert!((w.last().unwrap().1 - total).abs() < 0.05, "末段应延伸到音频结束");
+        assert!(
+            (w.last().unwrap().1 - total).abs() < 0.05,
+            "末段应精确结束于音频结束（末段不做延伸）"
+        );
     }
 
     #[test]

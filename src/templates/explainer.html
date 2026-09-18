@@ -158,9 +158,16 @@ __SCENES__
     const sel = '#s' + s.i;
     const dur = Math.max(0.4, s.end - s.start);
 
-    // 统一：淡入 + 淡出（末尾 0.4s）
-    tl.fromTo(sel, { opacity: 0 }, { opacity: 1, duration: 0.35, ease: "power1.out" }, s.start);
-    if (dur > 0.8) tl.to(sel, { opacity: 0, duration: 0.35, ease: "power1.in" }, Math.max(s.start, s.end - 0.35));
+    // 首个场景：**不做淡入**，保证视频第一帧就是封面图（缩略图/封面即配图）
+    if (idx === 0) {
+      tl.set(sel, { opacity: 1 }, 0);
+    } else {
+      tl.fromTo(sel, { opacity: 0 }, { opacity: 1, duration: 0.4, ease: "power1.out" }, s.start);
+    }
+    // 淡出：与下一个场景的淡入重叠（交叉淡化），避免切换瞬间出现纯背景帧
+    if (dur > 0.8) {
+      tl.to(sel, { opacity: 0, duration: 0.5, ease: "power1.in" }, Math.max(s.start + 0.15, s.end - 0.35));
+    }
 
     if (s.type === "cover") {
       const img = q(sel + " img");

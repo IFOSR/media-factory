@@ -146,13 +146,13 @@ Dynamic rendering needs CPU (Chromium renders frame by frame). It runs in a **Do
 
 ```bash
 # 1) Build the image on a machine with Docker Hub access (see scripts/render-worker/Dockerfile)
-cd scripts/render-worker && docker build --platform linux/amd64 -t mf-render:0.3.3 .
+cd scripts/render-worker && docker build --platform linux/amd64 -t mf-render:0.3.4 .
 
 # 2) Ship it to the compute machine and start (~2.7GB, ~1 min over LAN)
-docker save mf-render:0.3.3 | gzip -1 | ssh <host> 'gunzip | sudo docker load'
+docker save mf-render:0.3.4 | gzip -1 | ssh <host> 'gunzip | sudo docker load'
 ssh <host> 'sudo docker run -d --name mf-render --restart unless-stopped \
   -p 7788:7788 -v /srv/mf-render:/data \
-  -e HTTP_PROXY= -e HTTPS_PROXY= mf-render:0.3.3'
+  -e HTTP_PROXY= -e HTTPS_PROXY= mf-render:0.3.4'
 ```
 
 Server config (`~/.media-factory/config.yaml`):

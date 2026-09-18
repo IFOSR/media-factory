@@ -146,13 +146,13 @@ media-factory render-server --port 7788 --home /data   # 算力机渲染服务�
 
 ```bash
 # 1) 在能访问 Docker Hub 的机器上构建镜像（定义见 scripts/render-worker/Dockerfile）
-cd scripts/render-worker && docker build --platform linux/amd64 -t mf-render:0.3.3 .
+cd scripts/render-worker && docker build --platform linux/amd64 -t mf-render:0.3.4 .
 
 # 2) 传到算力机并启动（约 2.7GB，局域网传输约 1 分钟）
-docker save mf-render:0.3.3 | gzip -1 | ssh <算力机> 'gunzip | sudo docker load'
+docker save mf-render:0.3.4 | gzip -1 | ssh <算力机> 'gunzip | sudo docker load'
 ssh <算力机> 'sudo docker run -d --name mf-render --restart unless-stopped \
   -p 7788:7788 -v /srv/mf-render:/data \
-  -e HTTP_PROXY= -e HTTPS_PROXY= mf-render:0.3.3'
+  -e HTTP_PROXY= -e HTTPS_PROXY= mf-render:0.3.4'
 ```
 
 服务端配置（`~/.media-factory/config.yaml`）：
